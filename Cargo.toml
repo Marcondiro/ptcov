@@ -1,0 +1,43 @@
+[package]
+name = "ptcov"
+version = "0.0.1"
+authors = ["Marco Cavenati <cavenatimarco+ptcov@gmail.com>"]
+edition = "2024"
+rust-version = "1.91.1"
+license = "MIT OR Apache-2.0"
+description = "Decoder to compute code coverage from Intel® Processor Trace traces"
+documentation = "https://docs.rs/ptcov"
+readme = "README.md"
+repository = "https://github.com/Marcondiro/ptcov"
+keywords = ["decoder", "intel", "pt"]
+
+[features]
+default = []
+# Support for IA32_RTIT_CTL.CYCEn dependent packets
+cyc = []
+# Support for IA32_RTIT_CTL.IA32_RTIT_CTL.EventEn dependent packets
+event = []
+# Support for IA32_RTIT_CTL.MTCEn dependent packets
+mtc = []
+# Support PEBS output to PT trace.
+# When IA32_PERF_CAPABILITIES.PEBS_OUTPUT_PT_AVAIL[16] and IA32_PEBS_ENABLE.OUTPUT [62:61] == 0b01
+pebs = []
+# Support for IA32_RTIT_CTL.PTWEn dependent packets
+ptw = []
+# Support for IA32_RTIT_CTL.PwrEvtEn dependent packets
+pwr = []
+# Support Indirect Transfer Compression for Returns (RET). Required if IA32_RTIT_CTL.DisRETC == 0
+retc = []
+# Support for IA32_RTIT_CTL.TSCEn dependent packets
+tsc = []
+
+[dependencies]
+iced-x86 = { version = "1.21.0", default-features = false, features = [
+  "std",
+  "decoder",
+  "instr_info",
+] }
+log = { version = "0.4.28", optional = true }
+
+[dev-dependencies]
+env_logger = "0.11.8"
