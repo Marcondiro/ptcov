@@ -1,6 +1,6 @@
 use crate::PtDecoderError;
 use crate::packet::PtPacket;
-use crate::packet::psb::first_psb_position;
+use crate::packet::psb::{first_psb_position, Psb};
 
 #[derive(Debug)]
 pub struct PtPacketDecoder<'a> {
@@ -22,7 +22,7 @@ impl<'a> PtPacketDecoder<'a> {
     pub fn next_packet(&mut self) -> Result<PtPacket, PtDecoderError> {
         let p = PtPacket::parse(self.buffer, &mut self.pos)?;
         if matches!(p, PtPacket::Psb(..)) {
-            self.last_psb = self.pos;
+            self.last_psb = self.pos - Psb::SIZE;
         }
 
         #[cfg(feature = "log")]
