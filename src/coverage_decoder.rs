@@ -29,7 +29,7 @@ where
     images: &'a [PtImage],
     state: State,
     packet_decoder: PtPacketDecoder<'a>,
-    inst_decoder: Option<(iced_x86::Decoder<'a>, &'a PtImage)>,
+    inst_decoder: (iced_x86::Decoder<'a>, &'a PtImage),
 
     coverage: &'a mut [CE],
 }
@@ -38,7 +38,6 @@ where
 struct State {
     packet_en: bool,
     pip: Pip,
-    ip: u64,
     tip_last_ip: u64,
     vmcs: Option<Vmcs>,
     mode_exec: ModeExec,
@@ -63,7 +62,6 @@ impl State {
         Self {
             packet_en: false,
             pip: Pip { raw: [0; 6] },
-            ip: 0,
             tip_last_ip: 0, // SDM 34.4.2.2 “Last IP” is initialized to zero
             vmcs: None,
             mode_exec: ModeExec::new(AddressingMode::_16, false),
@@ -110,12 +108,21 @@ impl PtCoverageDecoderBuilder {
         // Ignore first PSB packet
         let _ = packet_decoder.next();
         let state = decode_psbplus(&mut packet_decoder, self.cpu)?;
+        let first_image = images.first().ok_or(PtDecoderError::MissingImage)?;
+        let inst_decoder = (
+            iced_x86::Decoder::new(
+                state.mode_exec.addressing_mode().into(),
+                first_image.data(),
+                iced_x86::DecoderOptions::NONE,
+            ),
+            first_image,
+        );
 
         Ok(PtCoverageDecoder {
             builder: self,
             packet_decoder,
             state,
-            inst_decoder: None,
+            inst_decoder,
             images,
             coverage,
         })
@@ -276,7 +283,7 @@ where
 
     fn handle_async_tip(&mut self, tip: Tip) -> Result<(), PtDecoderError> {
         if tip.ip(&mut self.state.tip_last_ip) {
-            self.state.ip = self.state.tip_last_ip;
+            self.inst_decoder.0.set_ip(self.state.tip_last_ip);
             Ok(())
         } else {
             // we jumped somewhere but who knows where?
@@ -287,7 +294,7 @@ where
     fn handle_async_tip_pgd(&mut self, tip_pgd: TipPgd) {
         self.state.packet_en = false;
         if tip_pgd.ip(&mut self.state.tip_last_ip) {
-            self.state.ip = self.state.tip_last_ip;
+            self.inst_decoder.0.set_ip(self.state.tip_last_ip);
         }
     }
 
@@ -318,7 +325,7 @@ where
     fn handle_tip_pge(&mut self, tip_pge: TipPge) -> Result<(), PtDecoderError> {
         if tip_pge.ip(&mut self.state.tip_last_ip) {
             self.state.packet_en = true;
-            self.state.ip = self.state.tip_last_ip;
+            self.inst_decoder.0.set_ip(self.state.tip_last_ip);
             Ok(())
         } else {
             Err(PtDecoderError::MalformedPacket)
@@ -332,7 +339,7 @@ where
             Indirect | FarIndirect | Return => {
                 if tip.ip(&mut self.state.tip_last_ip) {
                     self.add_coverage_entry(self.state.tip_last_ip);
-                    self.state.ip = self.state.tip_last_ip;
+                    self.inst_decoder.0.set_ip(self.state.tip_last_ip);
                     Ok(())
                 } else {
                     Err(PtDecoderError::MalformedPacket)
@@ -355,9 +362,9 @@ where
                 CondBranch { to } => {
                     if tnt_iter.next().unwrap() {
                         self.add_coverage_entry(to);
-                        self.state.ip = to;
+                        self.inst_decoder.0.set_ip(to);
                         #[cfg(feature = "log")]
-                        log::trace!("TNT taken to 0x{:x}", self.state.ip);
+                        log::trace!("TNT taken to 0x{:x}", self.inst_decoder.0.ip());
                     } else {
                         #[cfg(feature = "log")]
                         log::trace!("TNT not taken");
@@ -368,7 +375,7 @@ where
                     if tnt_iter.next().unwrap() {
                         let to = self.state.ret_comp_stack.pop().expect("empty ret stack"); //todo better error handling
                         self.add_coverage_entry(to);
-                        self.state.ip = to;
+                        self.inst_decoder.0.set_ip(to);
                     } else {
                         todo!("better error: broken return compression")
                     }
@@ -385,7 +392,7 @@ where
 
                     if tip.ip(&mut self.state.tip_last_ip) {
                         self.add_coverage_entry(self.state.tip_last_ip);
-                        self.state.ip = self.state.tip_last_ip;
+                        self.inst_decoder.0.set_ip(self.state.tip_last_ip);
                     } else {
                         return Err(PtDecoderError::MalformedPacket);
                     };
@@ -414,21 +421,20 @@ where
         let mut ins = Instruction::new();
         loop {
             if let Some(ip) = until
-                && self.inst_decoder.as_ref().unwrap().0.ip() == ip
+                && self.inst_decoder.0.ip() == ip
             {
                 return Ok(UntilIpReached);
             }
 
-            if !self.inst_decoder.as_ref().unwrap().0.can_decode() {
-                self.state.ip = self.inst_decoder.as_ref().unwrap().0.ip();
+            if !self.inst_decoder.0.can_decode() {
                 self.reposition_inst_decoder()?;
             }
 
-            self.inst_decoder.as_mut().unwrap().0.decode_out(&mut ins);
+            self.inst_decoder.0.decode_out(&mut ins);
             #[cfg(feature = "log")]
             log::trace!(
                 "\tip: 0x{:x}: {:?} {:?}",
-                self.inst_decoder.as_ref().unwrap().0.ip(),
+                self.inst_decoder.0.ip(),
                 ins.code(),
                 ins.op0_kind(),
             );
@@ -437,8 +443,7 @@ where
             }
             // todo log call for retcomp
 
-            if self.update_ip_needs_trace(&ins) {
-                self.state.ip = self.inst_decoder.as_ref().unwrap().0.ip();
+            if self.update_ip_needs_trace(&ins)? {
                 break;
             }
         }
@@ -461,32 +466,29 @@ where
 
     /// Position instruction decoder using the image that includes the current IP
     fn reposition_inst_decoder(&mut self) -> Result<(), PtDecoderError> {
-        if let Some((decoder, image)) = self.inst_decoder.as_mut()
-            && self.state.ip >= image.virtual_address_start()
-            && self.state.ip <= image.virtual_address_end()
+        let (decoder, image) = &mut self.inst_decoder;
+        if decoder.ip() <= image.virtual_address_start()
+            || decoder
+                .set_position((decoder.ip() - image.virtual_address_start()) as usize)
+                .is_err()
         {
-            decoder
-                .set_position((self.state.ip - image.virtual_address_start()) as usize)
-                .expect("The checks above should make sure that we are still in the current image");
-            decoder.set_ip(self.state.ip);
-        } else {
             let image = self
                 .images
                 .iter()
                 .find(|&image| {
-                    self.state.ip >= image.virtual_address_start()
-                        && self.state.ip <= image.virtual_address_end()
+                    self.inst_decoder.0.ip() >= image.virtual_address_start()
+                        && self.inst_decoder.0.ip() <= image.virtual_address_end()
                 })
                 .ok_or(PtDecoderError::MissingImage)?;
 
             let mut decoder = iced_x86::Decoder::with_ip(
                 self.state.mode_exec.addressing_mode().into(),
                 image.data(),
-                self.state.ip,
+                self.inst_decoder.0.ip(),
                 iced_x86::DecoderOptions::NONE,
             );
             decoder
-            .set_position((self.state.ip - image.virtual_address_start()) as usize)
+            .set_position((self.inst_decoder.0.ip() - image.virtual_address_start()) as usize)
             .expect(
                 "current IP should be in the current image, otherwise we should have Err before",
             );
@@ -496,7 +498,7 @@ where
                 "Using image starting at: 0x{:x}",
                 image.virtual_address_start()
             );
-            self.inst_decoder = Some((decoder, image));
+            self.inst_decoder = (decoder, image);
         }
         Ok(())
     }
@@ -505,21 +507,19 @@ where
         if self.state.save_coverage
             && self.packet_decoder.position() > self.builder.ignore_coverage_until
         {
-            let cov_entry = coverage_entry(self.state.ip, to_ip, self.coverage.len());
+            let cov_entry = coverage_entry(self.inst_decoder.0.ip(), to_ip, self.coverage.len());
             self.coverage[cov_entry] += 1.into();
         }
     }
 
     /// Retuns true if decoding needs trace to proceed
-    fn update_ip_needs_trace(&mut self, ins: &Instruction) -> bool {
-        match InstructionClass::from(ins) {
+    fn update_ip_needs_trace(&mut self, ins: &Instruction) -> Result<bool, PtDecoderError> {
+        Ok(match InstructionClass::from(ins) {
             InstructionClass::Other => false,
             InstructionClass::JumpDirect | InstructionClass::CallDirect => {
-                let (decoder, image) = &mut self.inst_decoder.as_mut().unwrap();
-                decoder.set_ip(ins.near_branch_target());
-                decoder
-                    .set_position((decoder.ip() - image.virtual_address_start()) as usize)
-                    .expect("todo");
+                self.inst_decoder.0.set_ip(ins.near_branch_target());
+                self.reposition_inst_decoder()?;
+
                 false
             }
             InstructionClass::JumpIndirect
@@ -530,7 +530,7 @@ where
             | InstructionClass::FarJump
             | InstructionClass::FarReturn
             | InstructionClass::Return => true,
-        }
+        })
     }
 }
 
