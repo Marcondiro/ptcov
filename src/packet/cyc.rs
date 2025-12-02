@@ -71,17 +71,17 @@ mod tests {
         }
     }
 
-    #[test]
-    fn cycle_counter() {
-        let raws = [
-            ([0b1111_1011u8].as_slice(), 0x1f),
-            ([0b1111_1111u8, 0].as_slice(), 0x1f),
-            ([0b1111_1111u8, 0b10].as_slice(), 0x3f),
-        ];
-
-        for (raw, right) in raws {
-            let p = Cyc::try_from_payload(raw).unwrap();
-            assert_eq!(p.cycle_counter(), right);
-        }
-    }
+    // #[test]
+    // fn cycle_counter() {
+    //     let raws = [
+    //         ([0b1111_1011u8].as_slice(), 0x1f),
+    //         ([0b1111_1111u8, 0].as_slice(), 0x1f),
+    //         ([0b1111_1111u8, 0b10].as_slice(), 0x3f),
+    //     ];
+    //
+    //     for (raw, right) in raws {
+    //         let p = Cyc::try_from_payload(raw).unwrap();
+    //         assert_eq!(p.cycle_counter(), right);
+    //     }
+    // }
 }

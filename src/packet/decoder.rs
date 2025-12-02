@@ -1,6 +1,6 @@
 use crate::PtDecoderError;
 use crate::packet::PtPacket;
-use crate::packet::psb::{first_psb_position, Psb};
+use crate::packet::psb::{Psb, first_psb_position};
 
 #[derive(Debug)]
 pub struct PtPacketDecoder<'a> {
