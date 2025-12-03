@@ -107,7 +107,7 @@ impl ExecutionState {
             .find(|&image| {
                 self.ip >= image.virtual_address_start() && self.ip <= image.virtual_address_end()
             })
-            .ok_or(PtDecoderError::MissingImage)?;
+            .ok_or(PtDecoderError::MissingImage { address: self.ip })?;
 
         let mut decoder = iced_x86::Decoder::with_ip(
             self.mode_exec.addressing_mode().into(),
@@ -121,7 +121,7 @@ impl ExecutionState {
                 "current IP should be in the current image, otherwise we should have Err before",
             );
 
-        #[cfg(feature = "log")]
+        #[cfg(feature = "log_instructions")]
         log::trace!(
             "Using image starting at: 0x{:x}",
             image.virtual_address_start()
@@ -272,13 +272,9 @@ impl PtCoverageDecoder {
             return Err(PtDecoderError::MalformedPacket);
         }
 
-        if matches!(
-            self.proceed_inst_until(Some(self.state.tip_last_ip))?,
-            ProceedInstStopReason::UntilIpReached
-        ) {
-            Ok(())
-        } else {
-            Err(PtDecoderError::IncoherentImage)
+        match self.proceed_inst_until(Some(self.state.tip_last_ip))? {
+            ProceedInstStopReason::UntilIpReached => Ok(()),
+            _ => Err(PtDecoderError::IncoherentImage),
         }
     }
 
@@ -429,7 +425,7 @@ impl PtCoverageDecoder {
         iteration_state: &mut CovDecIterationState<CE>,
     ) -> Result<(), PtDecoderError> {
         use ProceedInstStopReason::*;
-        #[cfg(feature = "log")]
+        #[cfg(feature = "log_packets")]
         log::trace!("TNT handling start");
 
         while tnt_iter.has_next() {
@@ -438,10 +434,10 @@ impl PtCoverageDecoder {
                     if tnt_iter.next().unwrap() {
                         self.add_coverage_entry(to, iteration_state);
                         self.state.ip = to;
-                        #[cfg(feature = "log")]
+                        #[cfg(feature = "log_packets")]
                         log::trace!("TNT taken to 0x{:x}", self.state.ip);
                     } else {
-                        #[cfg(feature = "log")]
+                        #[cfg(feature = "log_packets")]
                         log::trace!("TNT not taken");
                     }
                 }
@@ -477,7 +473,7 @@ impl PtCoverageDecoder {
             }
         }
 
-        #[cfg(feature = "log")]
+        #[cfg(feature = "log_packets")]
         log::trace!("TNT handling end");
         Ok(())
     }
@@ -507,7 +503,7 @@ impl PtCoverageDecoder {
             }
 
             let ins = inst_decoder.decode();
-            #[cfg(feature = "log")]
+            #[cfg(feature = "log_instructions")]
             log::trace!(
                 "\tip: 0x{:x}: {:?} {:?}",
                 inst_decoder.ip() - ins.len() as u64,
@@ -609,6 +605,7 @@ fn decode_psbplus<CE: Debug>(
                 if let Some(last_ip) = decode_psbplus_fup(fup, state.tip_last_ip, cpu) {
                     state.packet_en = true;
                     state.tip_last_ip = last_ip;
+                    state.ip = last_ip;
                 } else {
                     state.packet_en = false;
                 }

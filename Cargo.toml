@@ -31,6 +31,10 @@ retc = []
 # Support for IA32_RTIT_CTL.TSCEn dependent packets
 tsc = []
 
+log = ["log_packets", "log_instructions"]
+log_packets = ["dep:log"]
+log_instructions = ["dep:log"]
+
 [dependencies]
 iced-x86 = { version = "1.21.0", default-features = false, features = [
   "std",

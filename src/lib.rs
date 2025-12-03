@@ -22,7 +22,7 @@ pub enum PtDecoderError {
     MalformedInstruction,
     MalformedPacket,
     MalformedPsbPlus,
-    MissingImage,
+    MissingImage { address: u64 },
     SyncFailed,
 }
 

@@ -21,7 +21,7 @@ impl<'a> PtPacketDecoder<'a> {
     pub fn next_packet(&mut self) -> Result<PtPacket, PtDecoderError> {
         let p = PtPacket::parse(self.buffer, &mut self.pos)?;
 
-        #[cfg(feature = "log")]
+        #[cfg(feature = "log_packets")]
         log::trace!("PT packet: {p:x?}");
 
         Ok(p)
