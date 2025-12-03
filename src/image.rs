@@ -1,5 +1,5 @@
 // todo better debug print
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PtImage {
     data: Vec<u8>,
     virtual_address: u64,
@@ -8,9 +8,9 @@ pub struct PtImage {
 }
 
 impl PtImage {
-    pub fn new(data: &[u8], virtual_address: u64) -> Self {
+    pub const fn new(data: Vec<u8>, virtual_address: u64) -> Self {
         Self {
-            data: data.to_vec(),
+            data,
             virtual_address,
             cr3: None,
             vmcs_ptr: None,

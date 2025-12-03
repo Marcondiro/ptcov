@@ -1,42 +1,30 @@
 use crate::PtDecoderError;
 use crate::packet::PtPacket;
-use crate::packet::psb::{Psb, first_psb_position};
+use crate::packet::psb::first_psb_position;
 
 #[derive(Debug)]
 pub struct PtPacketDecoder<'a> {
     buffer: &'a [u8],
     pos: usize,
-    last_psb: usize,
 }
 
 impl<'a> PtPacketDecoder<'a> {
+    pub const fn new_not_syncd(buffer: &'a [u8]) -> Self {
+        Self { buffer, pos: 0 }
+    }
+
     pub fn new(buffer: &'a [u8]) -> Result<Self, PtDecoderError> {
         let sync = first_psb_position(buffer).ok_or(PtDecoderError::SyncFailed)?;
-        Ok(Self {
-            buffer,
-            pos: sync,
-            last_psb: sync,
-        })
+        Ok(Self { buffer, pos: sync })
     }
 
     pub fn next_packet(&mut self) -> Result<PtPacket, PtDecoderError> {
         let p = PtPacket::parse(self.buffer, &mut self.pos)?;
-        if matches!(p, PtPacket::Psb(..)) {
-            self.last_psb = self.pos - Psb::SIZE;
-        }
 
         #[cfg(feature = "log")]
         log::trace!("PT packet: {p:x?}");
 
         Ok(p)
-    }
-
-    pub const fn position(&self) -> usize {
-        self.pos
-    }
-
-    pub const fn last_sync_position(&self) -> usize {
-        self.last_psb
     }
 }
 
