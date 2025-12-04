@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::PtDecoderError;
 use crate::cpu::PtCpu;
 use crate::image::PtImage;
@@ -26,6 +27,7 @@ pub struct PtCoverageDecoder {
 
     is_syncd: bool,
     state: ExecutionState,
+    proceed_inst_cache: HashMap<u64, (u64, ProceedInstStopReason)> // todo cr3 + vmcs should be in the key as well
 }
 
 #[derive(Debug)]
@@ -72,7 +74,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum ProceedInstStopReason {
     CondBranch { to: u64 },
     FarIndirect,
@@ -174,11 +176,12 @@ impl PtCoverageDecoderBuilder {
         self
     }
 
-    pub const fn build(self) -> Result<PtCoverageDecoder, PtDecoderError> {
+    pub fn build(self) -> Result<PtCoverageDecoder, PtDecoderError> {
         Ok(PtCoverageDecoder {
             builder: self,
             state: ExecutionState::new(),
             is_syncd: false,
+            proceed_inst_cache: HashMap::new(),
         })
     }
 }
@@ -488,6 +491,12 @@ impl PtCoverageDecoder {
             return Err(PtDecoderError::IncoherentState);
         }
 
+        if until.is_none() && let Some(&(ip, reason)) = self.proceed_inst_cache.get(&self.state.ip){
+            self.state.ip = ip;
+            return Ok(reason)
+        }
+
+        let from = self.state.ip;
         let mut inst_decoder = self.state.new_inst_decoder(&self.builder.images)?;
         let ins = loop {
             if let Some(ip) = until
@@ -530,7 +539,7 @@ impl PtCoverageDecoder {
             }
         };
 
-        Ok(match InstructionClass::from(&ins) {
+        let ret = match InstructionClass::from(&ins) {
             InstructionClass::CondBranch => CondBranch {
                 to: ins.near_branch64(),
             },
@@ -543,7 +552,10 @@ impl PtCoverageDecoder {
             InstructionClass::JumpDirect
             | InstructionClass::CallDirect
             | InstructionClass::Other => unreachable!("These instructions do not need traces"),
-        })
+        };
+
+        self.proceed_inst_cache.insert(from, (self.state.ip, ret));
+        Ok(ret)
     }
 
     fn add_coverage_entry<CE: Debug + AddAssign + From<u8>>(
