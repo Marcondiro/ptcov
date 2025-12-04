@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use crate::PtDecoderError;
 use crate::cpu::PtCpu;
 use crate::image::PtImage;
@@ -11,6 +10,7 @@ use crate::packet::tnt::TntIter;
 use crate::packet::vmcs::Vmcs;
 use crate::utils::fmix64;
 use iced_x86::{Code, FlowControl, Instruction, Register};
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::AddAssign;
 
@@ -27,7 +27,7 @@ pub struct PtCoverageDecoder {
 
     is_syncd: bool,
     state: ExecutionState,
-    proceed_inst_cache: HashMap<u64, (u64, ProceedInstStopReason)> // todo cr3 + vmcs should be in the key as well
+    proceed_inst_cache: HashMap<u64, (u64, ProceedInstStopReason)>, // todo cr3 + vmcs should be in the key as well
 }
 
 #[derive(Debug)]
@@ -491,9 +491,11 @@ impl PtCoverageDecoder {
             return Err(PtDecoderError::IncoherentState);
         }
 
-        if until.is_none() && let Some(&(ip, reason)) = self.proceed_inst_cache.get(&self.state.ip){
+        if until.is_none()
+            && let Some(&(ip, reason)) = self.proceed_inst_cache.get(&self.state.ip)
+        {
             self.state.ip = ip;
-            return Ok(reason)
+            return Ok(reason);
         }
 
         let from = self.state.ip;
