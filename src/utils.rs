@@ -4,7 +4,7 @@ pub const fn sign_extend_48(x: u64) -> u64 {
 }
 
 /// Murmur3 finalizer (mixer)
-/// 
+///
 /// Bit shuffler for u64 that has a good avalanche effect.
 pub const fn fmix64(mut k: u64) -> u64 {
     k ^= k >> 33;

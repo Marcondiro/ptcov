@@ -1,4 +1,4 @@
-use crate::packet::{PtPacketParseError, SizedPtPacket};
+use crate::packet::SizedPtPacket;
 
 #[derive(Debug, PartialEq)]
 pub struct Pip {
@@ -23,16 +23,5 @@ impl Pip {
 
     pub const fn non_root_vmx(&self) -> bool {
         self.raw[0] & 0x01 != 0
-    }
-
-    /// Caller must check the header and pass just the payload
-    pub(super) fn try_from_payload(payload: &[u8]) -> Result<Self, PtPacketParseError> {
-        let raw = payload
-            .get(..6)
-            .ok_or(PtPacketParseError::MalformedPacket)?
-            .try_into()
-            .unwrap();
-
-        Ok(Self { raw })
     }
 }

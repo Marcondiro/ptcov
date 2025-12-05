@@ -1,4 +1,4 @@
-use crate::packet::{PtPacketParseError, SizedPtPacket};
+use crate::packet::SizedPtPacket;
 use std::fmt::{Debug, Formatter};
 
 #[derive(Clone, PartialEq)]
@@ -8,7 +8,7 @@ pub struct TntShort {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TntLong {
-    raw: [u8; 6],
+    pub(super) raw: [u8; 6],
 }
 
 #[derive(Debug, PartialEq)]
@@ -83,22 +83,6 @@ impl TntShort {
 impl TntLong {
     pub(super) const SIZE: usize = 8;
     pub(super) const B1: u8 = 0xa3;
-
-    /// Caller must check the header and pass just the payload
-    pub(super) fn try_from_payload(payload: &[u8]) -> Result<Self, PtPacketParseError> {
-        let raw = payload
-            .get(0..6)
-            .ok_or(PtPacketParseError::MalformedPacket)?
-            .try_into()
-            .unwrap();
-
-        // Tnt must contain a stop bit
-        if raw == [0; 6] {
-            return Err(PtPacketParseError::MalformedPacket);
-        };
-
-        Ok(Self { raw })
-    }
 
     const fn payload_as_u64(&self) -> u64 {
         u64::from_le_bytes([
@@ -213,20 +197,12 @@ mod tests {
     #[test]
     fn iterate_tnt_long() {
         let raw = [0b10101010, 0b10101010, 0b10101010, 0b10101010, 0, 0];
-        let p = TntLong::try_from_payload(&raw).unwrap();
+        let p = TntLong { raw };
 
         let mut right = vec![false, true].repeat(15);
         right.push(false);
 
         assert_eq!(p.clone().into_iter().collect::<Vec<_>>().len(), right.len());
         assert_eq!(p.into_iter().collect::<Vec<_>>(), right);
-    }
-
-    #[test]
-    fn truncated_tnt_long() {
-        let raw = [0b10101010, 0b10101010, 0b10101010, 0b10101010];
-        let p = TntLong::try_from_payload(&raw);
-
-        assert!(matches!(p, Err(PtPacketParseError::MalformedPacket)));
     }
 }
