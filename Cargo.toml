@@ -35,6 +35,9 @@ log = ["log_packets", "log_instructions"]
 log_packets = ["dep:log"]
 log_instructions = ["dep:log"]
 
+[lints.rust]
+#missing-docs = "warn"
+
 [dependencies]
 iced-x86 = { version = "1.21.0", default-features = false, features = [
   "std",

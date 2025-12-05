@@ -1,4 +1,4 @@
-// #![forbid(unsafe_code)]
+#![cfg_attr(not(test), deny(unsafe_code))]
 #![allow(clippy::just_underscores_and_digits)]
 
 use crate::packet::PtPacketParseError;
