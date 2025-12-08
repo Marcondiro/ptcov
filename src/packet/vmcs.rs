@@ -1,9 +1,9 @@
-use crate::packet::{PtPacketParseError, SizedPtPacket};
+use crate::packet::SizedPtPacket;
 
 #[derive(Debug, PartialEq)]
 #[repr(transparent)]
 pub struct Vmcs {
-    raw: [u8; 5],
+    pub(super) raw: [u8; 5],
 }
 
 impl SizedPtPacket for Vmcs {
@@ -28,14 +28,4 @@ impl Vmcs {
     //     ];
     //     u64::from_le_bytes(raw) << 12
     // }
-
-    pub(super) fn try_from_payload(payload: &[u8]) -> Result<Self, PtPacketParseError> {
-        let raw = payload
-            .get(..5)
-            .ok_or(PtPacketParseError::MalformedPacket)?
-            .try_into()
-            .unwrap();
-
-        Ok(Self { raw })
-    }
 }
