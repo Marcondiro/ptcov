@@ -1,7 +1,7 @@
 use crate::packet::{PtPacketParseError, SizedPtPacket};
 use crate::utils::sign_extend_48;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Tip {
     ip_bytes: IpBytes,
     target_ip: u64,

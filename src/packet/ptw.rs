@@ -1,6 +1,6 @@
 use crate::packet::SizedPtPacket;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Ptw {}
 
 impl SizedPtPacket for Ptw {

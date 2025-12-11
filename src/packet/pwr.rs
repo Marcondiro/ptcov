@@ -1,6 +1,6 @@
 use crate::packet::SizedPtPacket;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Pwrx {}
 
 impl SizedPtPacket for Pwrx {
@@ -9,7 +9,7 @@ impl SizedPtPacket for Pwrx {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Pwre {}
 
 impl SizedPtPacket for Pwre {
@@ -18,7 +18,7 @@ impl SizedPtPacket for Pwre {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Mwait {}
 
 impl SizedPtPacket for Mwait {
@@ -27,7 +27,7 @@ impl SizedPtPacket for Mwait {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Exstop {}
 
 impl SizedPtPacket for Exstop {

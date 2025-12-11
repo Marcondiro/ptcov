@@ -1,18 +1,43 @@
-use crate::PtDecoderError;
 use crate::cpu::PtCpu;
 use crate::image::PtImage;
-use crate::packet::PtPacket;
 use crate::packet::decoder::PtPacketDecoder;
 use crate::packet::mode::{AddressingMode, ModeExec, ModeTsx, TransactionState};
 use crate::packet::pip::Pip;
 use crate::packet::tip::{Fup, Tip, TipPgd, TipPge};
 use crate::packet::tnt::TntIter;
 use crate::packet::vmcs::Vmcs;
+use crate::packet::{PtPacket, PtPacketParseError};
 use crate::utils::fmix64;
 use iced_x86::{Code, FlowControl, Instruction, Register};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::AddAssign;
+
+#[derive(Debug, PartialEq)]
+#[non_exhaustive]
+pub enum PtDecoderError {
+    Eof,
+    IncoherentState,
+    IncoherentImage,
+    InvalidPacketSequence { packets: Vec<PtPacket> },
+    MalformedInstruction,
+    MalformedPacket,
+    MalformedPsbPlus,
+    MissingImage { address: u64 },
+    SyncFailed,
+    // todo: if an OVF packet is encountered, the coverage might be incomplete and a source of
+    // fuzzer instability. Consider returning this information so that a fuzzer using this lib can
+    // decide to trash the execution and repeat it.
+}
+
+impl From<PtPacketParseError> for PtDecoderError {
+    fn from(value: PtPacketParseError) -> Self {
+        match value {
+            PtPacketParseError::MalformedPacket => Self::MalformedPacket,
+            PtPacketParseError::Eof => Self::Eof,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PtCoverageDecoderBuilder {
@@ -236,12 +261,36 @@ impl PtCoverageDecoder {
             PtPacket::ModeTsx(mode_tsx) => self.handle_mode_tsx(mode_tsx, iteration_state)?,
             PtPacket::TraceStop(..) => {} // todo
             PtPacket::Vmcs(..) => {}      //todo
-            PtPacket::Ovf(..) => {}       //todo
+            PtPacket::Ovf(..) => self.handle_ovf(iteration_state)?,
             PtPacket::Psb(..) => self.state = decode_psbplus(iteration_state, self.builder.cpu)?,
-            PtPacket::PsbEnd(..) => return Err(PtDecoderError::InvalidPacketSequence),
+            PtPacket::PsbEnd(psb_end) => {
+                return Err(PtDecoderError::InvalidPacketSequence {
+                    packets: vec![PtPacket::PsbEnd(psb_end)],
+                });
+            }
             _ => {} // Ignore other packets
         };
         Ok(())
+    }
+
+    fn handle_ovf<CE: Debug + AddAssign + From<u8>>(
+        &mut self,
+        iteration_state: &mut CovDecIterationState<CE>,
+    ) -> Result<(), PtDecoderError> {
+        #[cfg(feature = "retc")]
+        self.state.ret_comp_stack.clear();
+
+        // state.packet_en might have changed during the overflow
+        match iteration_state.packet_decoder.next_packet()? {
+            PtPacket::Fup(fup) => {
+                self.state.packet_en = true;
+                self.handle_fup_after_ovf(fup)
+            }
+            p => {
+                self.state.packet_en = false;
+                iteration_state.packet_decoder.rollback_one_packet(p)
+            }
+        }
     }
 
     fn handle_mode_tsx<CE: Debug + AddAssign + From<u8>>(
@@ -251,17 +300,26 @@ impl PtCoverageDecoder {
     ) -> Result<(), PtDecoderError> {
         // todo: double check this function
         if self.state.packet_en {
-            match iteration_state.packet_decoder.next_packet()? {
-                PtPacket::Fup(fup) => self.handle_standalone_fup(fup)?,
-                _ => return Err(PtDecoderError::InvalidPacketSequence),
-            }
+            let fup = match iteration_state.packet_decoder.next_packet()? {
+                PtPacket::Fup(fup) => fup,
+                p => {
+                    return Err(PtDecoderError::InvalidPacketSequence {
+                        packets: vec![PtPacket::ModeTsx(mode_tsx), p],
+                    });
+                }
+            };
+            self.handle_standalone_fup(&fup)?;
 
             if mode_tsx.transaction_state() == TransactionState::Abort {
                 match iteration_state.packet_decoder.next_packet()? {
                     PtPacket::Tip(tip) => self.proceed_inst_tip(tip, iteration_state)?,
                     PtPacket::TipPge(tip_pge) => self.handle_tip_pge(tip_pge)?,
                     PtPacket::TipPgd(tip_pgd) => self.handle_tip_pgd(tip_pgd)?,
-                    _ => return Err(PtDecoderError::InvalidPacketSequence),
+                    p => {
+                        return Err(PtDecoderError::InvalidPacketSequence {
+                            packets: vec![PtPacket::ModeTsx(mode_tsx), PtPacket::Fup(fup), p],
+                        });
+                    }
                 }
             }
         }
@@ -270,7 +328,16 @@ impl PtCoverageDecoder {
         Ok(())
     }
 
-    fn handle_standalone_fup(&mut self, fup: Fup) -> Result<(), PtDecoderError> {
+    fn handle_fup_after_ovf(&mut self, fup: Fup) -> Result<(), PtDecoderError> {
+        if !fup.ip(&mut self.state.tip_last_ip) {
+            Err(PtDecoderError::MalformedPacket)
+        } else {
+            self.state.ip = self.state.tip_last_ip;
+            Ok(())
+        }
+    }
+
+    fn handle_standalone_fup(&mut self, fup: &Fup) -> Result<(), PtDecoderError> {
         if !fup.ip(&mut self.state.tip_last_ip) {
             return Err(PtDecoderError::MalformedPacket);
         }
@@ -289,8 +356,12 @@ impl PtCoverageDecoder {
         match iteration_state.packet_decoder.next_packet()? {
             PtPacket::Tip(tip) => self.proceed_inst_tip(tip, iteration_state)?,
             PtPacket::TipPge(tip_pge) => self.handle_tip_pge(tip_pge)?,
-            PtPacket::Fup(fup) => self.handle_standalone_fup(fup)?,
-            _ => return Err(PtDecoderError::InvalidPacketSequence),
+            PtPacket::Fup(fup) => self.handle_standalone_fup(&fup)?,
+            p => {
+                return Err(PtDecoderError::InvalidPacketSequence {
+                    packets: vec![PtPacket::ModeExec(mode_exec), p],
+                });
+            }
         }
         self.state.mode_exec = mode_exec;
 
@@ -331,7 +402,7 @@ impl PtCoverageDecoder {
         fup: Fup,
         iteration_state: &mut CovDecIterationState<CE>,
     ) -> Result<(), PtDecoderError> {
-        self.handle_standalone_fup(fup)?;
+        self.handle_standalone_fup(&fup)?;
         loop {
             let packet = iteration_state.packet_decoder.next_packet()?;
             match packet {
@@ -340,8 +411,11 @@ impl PtCoverageDecoder {
                 PtPacket::ModeExec(..) => todo!("handle fup mode exec"),
                 PtPacket::Tip(tip) => break self.handle_async_tip(tip)?,
                 PtPacket::TipPgd(tip_pgd) => break self.handle_async_tip_pgd(tip_pgd),
-                // todo: timing packets are ok here, handle them, else invalid in fup compound packet
-                _ => return Err(PtDecoderError::InvalidPacketSequence),
+                p => {
+                    return Err(PtDecoderError::InvalidPacketSequence {
+                        packets: vec![PtPacket::Fup(fup), p],
+                    });
+                }
             }
         }
         Ok(())
@@ -353,7 +427,9 @@ impl PtCoverageDecoder {
             Ok(())
         } else {
             // we jumped somewhere but who knows where?
-            Err(PtDecoderError::InvalidPacketSequence)
+            Err(PtDecoderError::InvalidPacketSequence {
+                packets: vec![PtPacket::Tip(tip)],
+            })
         }
     }
 
@@ -461,7 +537,9 @@ impl PtCoverageDecoder {
                     let tip = if let PtPacket::Tip(tip) = deferred {
                         tip
                     } else {
-                        return Err(PtDecoderError::InvalidPacketSequence);
+                        return Err(PtDecoderError::InvalidPacketSequence {
+                            packets: vec![deferred],
+                        }); // todo add tnt here to the sequence
                     };
 
                     if tip.ip(&mut self.state.tip_last_ip) {
@@ -491,6 +569,7 @@ impl PtCoverageDecoder {
             return Err(PtDecoderError::IncoherentState);
         }
 
+        // Use cache (only if until is None)
         if until.is_none()
             && let Some(&(ip, reason)) = self.proceed_inst_cache.get(&self.state.ip)
         {

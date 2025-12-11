@@ -70,7 +70,7 @@ pub trait SizedPtPacket {
 }
 
 #[non_exhaustive]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum PtPacket {
     /// Taken/Not-taken (TNT) short Packet
     TntShort(TntShort),

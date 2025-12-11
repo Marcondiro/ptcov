@@ -1,6 +1,6 @@
 use crate::packet::{PtPacketParseError, SizedPtPacket};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Tma {
     ctc: u16,
     fast_counter: u16,

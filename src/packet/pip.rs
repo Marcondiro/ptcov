@@ -1,6 +1,6 @@
 use crate::packet::SizedPtPacket;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Pip {
     pub(crate) raw: [u8; 6],
 }

@@ -1,6 +1,6 @@
 use crate::packet::{PtPacketParseError, SizedPtPacket};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Cyc {
     raw: [u8; 15], // according to Intel's libipt max len 15, SDM says: "The size of the counter is implementation specific"
     len: usize,

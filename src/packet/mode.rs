@@ -5,12 +5,12 @@ pub(crate) const SIZE: usize = 2;
 pub(crate) const B0: u8 = 0x99;
 pub(crate) const B1_MASK: u8 = 0xe0;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub struct ModeExec {
     raw: u8,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ModeTsx {
     transaction_state: TransactionState,
 }

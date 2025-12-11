@@ -1,6 +1,6 @@
 use crate::packet::{PtPacketParseError, SizedPtPacket};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Tsc {
     raw: [u8; 7],
 }
