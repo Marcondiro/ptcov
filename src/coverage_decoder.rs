@@ -19,6 +19,7 @@ pub enum PtDecoderError {
     Eof,
     IncoherentState,
     IncoherentImage,
+    InvalidArgument,
     InvalidPacketSequence { packets: Vec<PtPacket> },
     MalformedInstruction,
     MalformedPacket,
@@ -84,6 +85,10 @@ where
         pt_trace: &'a [u8],
         coverage: &'a mut [CE],
     ) -> Result<Self, PtDecoderError> {
+        if coverage.len() == 0 {
+            return Err(PtDecoderError::InvalidArgument);
+        }
+
         let packet_decoder = if cov_dec.is_syncd {
             PtPacketDecoder::new_not_syncd(pt_trace)
         } else {
