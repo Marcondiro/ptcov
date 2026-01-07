@@ -159,26 +159,26 @@ impl Iterator for TntLongIter {
     }
 }
 
-impl TntIter {
-    pub const fn has_next(&self) -> bool {
-        match self {
-            Self::TntShortIter(s) => s.has_next(),
-            Self::TntLongIter(l) => l.has_next(),
-        }
-    }
-}
-
-impl TntShortIter {
-    pub const fn has_next(&self) -> bool {
-        self.mask >> 1 > 0b1
-    }
-}
-
-impl TntLongIter {
-    pub const fn has_next(&self) -> bool {
-        self.mask >> 1 > 0
-    }
-}
+// impl TntIter {
+//     pub const fn has_next(&self) -> bool {
+//         match self {
+//             Self::TntShortIter(s) => s.has_next(),
+//             Self::TntLongIter(l) => l.has_next(),
+//         }
+//     }
+// }
+//
+// impl TntShortIter {
+//     pub const fn has_next(&self) -> bool {
+//         self.mask >> 1 > 0b1
+//     }
+// }
+//
+// impl TntLongIter {
+//     pub const fn has_next(&self) -> bool {
+//         self.mask >> 1 > 0
+//     }
+// }
 
 #[cfg(test)]
 mod tests {

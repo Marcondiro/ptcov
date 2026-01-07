@@ -13,6 +13,7 @@ impl SizedPtPacket for Tsc {
 
 impl Tsc {
     pub(super) fn try_from_payload(payload: &[u8]) -> Result<Self, PtPacketParseError> {
+        // the try_into cannot fail, therefore the unwrap() can never panic.
         let raw = payload
             .get(..8)
             .ok_or(PtPacketParseError::MalformedPacket)?

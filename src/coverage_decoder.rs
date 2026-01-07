@@ -412,6 +412,7 @@ impl PtCoverageDecoder {
                 PtPacket::Tip(tip) => break self.handle_async_tip(tip)?,
                 PtPacket::TipPgd(tip_pgd) => break self.handle_async_tip_pgd(tip_pgd),
                 p => {
+                    // todo handle overflow packet here (and in other InvalidPacketSequence?)
                     return Err(PtDecoderError::InvalidPacketSequence {
                         packets: vec![PtPacket::Fup(fup), p],
                     });
@@ -500,57 +501,65 @@ impl PtCoverageDecoder {
     /// packet is a TNT
     fn proceed_inst_tnt<CE: Debug + AddAssign + From<u8>>(
         &mut self,
-        mut tnt_iter: TntIter,
+        tnt_iter: TntIter,
         iteration_state: &mut CovDecIterationState<CE>,
     ) -> Result<(), PtDecoderError> {
         use ProceedInstStopReason::*;
         #[cfg(feature = "log_packets")]
         log::trace!("TNT handling start");
 
-        while tnt_iter.has_next() {
-            match self.proceed_inst_until(None)? {
-                CondBranch { to } => {
-                    if tnt_iter.next().unwrap() {
-                        self.add_coverage_entry(to, iteration_state);
-                        self.state.ip = to;
-                        #[cfg(feature = "log_packets")]
-                        log::trace!("TNT taken to 0x{:x}", self.state.ip);
-                    } else {
-                        #[cfg(feature = "log_packets")]
-                        log::trace!("TNT not taken");
+        for tnt in tnt_iter {
+            'inst: loop {
+                match self.proceed_inst_until(None)? {
+                    // TNT consumed at the current decision point
+                    CondBranch { to } => {
+                        if tnt {
+                            self.add_coverage_entry(to, iteration_state);
+                            self.state.ip = to;
+                            #[cfg(feature = "log_packets")]
+                            log::trace!("TNT taken to 0x{:x}", self.state.ip);
+                        } else {
+                            #[cfg(feature = "log_packets")]
+                            log::trace!("TNT not taken");
+                        }
+                        break 'inst;
                     }
-                }
-                #[cfg(feature = "retc")]
-                Return => {
-                    if tnt_iter.next().unwrap() {
-                        let to = self.state.ret_comp_stack.pop().expect("empty ret stack"); //todo better error handling
-                        self.add_coverage_entry(to, iteration_state);
-                        self.state.ip = to;
-                    } else {
-                        todo!("better error: broken return compression")
+                    #[cfg(feature = "retc")]
+                    Return => {
+                        if tnt {
+                            let to = self.state.ret_comp_stack.pop().expect("empty ret stack"); //todo better error handling
+                            self.add_coverage_entry(to, iteration_state);
+                            self.state.ip = to;
+                        } else {
+                            todo!("better error: broken return compression")
+                        }
+                        break 'inst;
                     }
-                }
-                #[cfg_attr(feature = "retc", expect(unreachable_patterns))]
-                Indirect | FarIndirect | Return => {
-                    // handle possible deferred tips
-                    let deferred = iteration_state.packet_decoder.next_packet()?;
-                    let tip = if let PtPacket::Tip(tip) = deferred {
-                        tip
-                    } else {
-                        return Err(PtDecoderError::InvalidPacketSequence {
-                            packets: vec![deferred],
-                        }); // todo add tnt here to the sequence
-                    };
 
-                    if tip.ip(&mut self.state.tip_last_ip) {
-                        self.add_coverage_entry(self.state.tip_last_ip, iteration_state);
-                        self.state.ip = self.state.tip_last_ip;
-                    } else {
-                        return Err(PtDecoderError::MalformedPacket);
-                    };
+                    // TNT NOT consumed at the current decision point, handle the decision point
+                    // and continue in the loop without consuming the TNT
+                    #[cfg_attr(feature = "retc", expect(unreachable_patterns))]
+                    Indirect | FarIndirect | Return => {
+                        // handle possible deferred tips
+                        let deferred = iteration_state.packet_decoder.next_packet()?;
+                        let tip = if let PtPacket::Tip(tip) = deferred {
+                            tip
+                        } else {
+                            return Err(PtDecoderError::InvalidPacketSequence {
+                                packets: vec![deferred],
+                            }); // todo add tnt here to the sequence
+                        };
+
+                        if tip.ip(&mut self.state.tip_last_ip) {
+                            self.add_coverage_entry(self.state.tip_last_ip, iteration_state);
+                            self.state.ip = self.state.tip_last_ip;
+                        } else {
+                            return Err(PtDecoderError::MalformedPacket);
+                        };
+                    }
+                    MovCr3 => return Err(PtDecoderError::IncoherentImage),
+                    UntilIpReached => unreachable!("until parameter is set to None"),
                 }
-                MovCr3 => return Err(PtDecoderError::IncoherentImage),
-                UntilIpReached => unreachable!("until parameter is set to None"),
             }
         }
 

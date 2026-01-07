@@ -194,11 +194,11 @@ impl PtPacket {
                 }),
 
                 // TNTLong
-                [0x02, TntLong::B1, 0, 0, 0, 0, 0, 0] => {
+                [0x02, TntLong::B1, 0, 0, 0, 0, 0, 0, ..] => {
                     // Tnt must contain a stop bit
                     return Err(PtPacketParseError::MalformedPacket);
                 }
-                [0x02, TntLong::B1, b2, b3, b4, b5, b6, b7] => Self::TntLong(TntLong {
+                [0x02, TntLong::B1, b2, b3, b4, b5, b6, b7, ..] => Self::TntLong(TntLong {
                     raw: [*b2, *b3, *b4, *b5, *b6, *b7],
                 }),
 
@@ -227,7 +227,7 @@ impl PtPacket {
                 #[cfg(feature = "mtc")]
                 [0x59, ..] => Self::Mtc(Mtc::try_from_payload(&slice[1..])?),
                 [0xd9, b1, b2, ..] => Self::Trig(Trig { raw: [*b1, *b2] }),
-                [0x02, 0xc3, 0x88, b3, b4, b5, b6, b7, b8, b9, b10] => Self::Mnt(Mnt {
+                [0x02, 0xc3, 0x88, b3, b4, b5, b6, b7, b8, b9, b10, ..] => Self::Mnt(Mnt {
                     raw: [*b3, *b4, *b5, *b6, *b7, *b8, *b9, *b10],
                 }),
                 [_, ..] => return Err(PtPacketParseError::MalformedPacket),
