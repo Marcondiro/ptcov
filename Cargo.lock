@@ -179,7 +179,7 @@ dependencies = [
 
 [[package]]
 name = "ptcov"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "env_logger",
  "iced-x86",

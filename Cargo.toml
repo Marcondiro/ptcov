@@ -1,6 +1,6 @@
 [package]
 name = "ptcov"
-version = "0.0.4"
+version = "0.0.5"
 authors = ["Marco Cavenati <cavenatimarco+ptcov@gmail.com>"]
 edition = "2024"
 rust-version = "1.89.0"
