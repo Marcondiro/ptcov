@@ -85,7 +85,7 @@ where
         pt_trace: &'a [u8],
         coverage: &'a mut [CE],
     ) -> Result<Self, PtDecoderError> {
-        if coverage.len() == 0 {
+        if coverage.is_empty() {
             return Err(PtDecoderError::InvalidArgument);
         }
 
