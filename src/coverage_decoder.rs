@@ -9,9 +9,12 @@ use crate::packet::vmcs::Vmcs;
 use crate::packet::{PtPacket, PtPacketParseError};
 use crate::utils::fmix64;
 use iced_x86::{Code, FlowControl, Instruction, Register};
+use num_traits::SaturatingAdd;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::ops::AddAssign;
+
+pub trait CoverageEntry: Copy + Debug + From<u8> + SaturatingAdd {}
+impl<T> CoverageEntry for T where T: Copy + Debug + From<u8> + SaturatingAdd {}
 
 #[derive(Debug, PartialEq)]
 #[non_exhaustive]
@@ -78,7 +81,7 @@ struct CovDecIterationState<'a, CE: Debug> {
 
 impl<'a, CE> CovDecIterationState<'a, CE>
 where
-    CE: Debug + AddAssign,
+    CE: CoverageEntry,
 {
     fn new(
         cov_dec: &mut PtCoverageDecoder,
@@ -229,7 +232,7 @@ impl PtCoverageDecoder {
         coverage: &mut [CE],
     ) -> Result<(), PtDecoderError>
     where
-        CE: AddAssign + Debug + From<u8>,
+        CE: CoverageEntry,
     {
         let mut iteration_state = CovDecIterationState::new(self, pt_trace, coverage)?;
 
@@ -244,7 +247,7 @@ impl PtCoverageDecoder {
 
     /// Continue decoding using PT trace.
     /// Can consume one or more PT packets.
-    fn proceed_with_trace<CE: Debug + AddAssign + From<u8>>(
+    fn proceed_with_trace<CE: CoverageEntry>(
         &mut self,
         iteration_state: &mut CovDecIterationState<CE>,
     ) -> Result<(), PtDecoderError> {
@@ -278,7 +281,7 @@ impl PtCoverageDecoder {
         Ok(())
     }
 
-    fn handle_ovf<CE: Debug + AddAssign + From<u8>>(
+    fn handle_ovf<CE: CoverageEntry>(
         &mut self,
         iteration_state: &mut CovDecIterationState<CE>,
     ) -> Result<(), PtDecoderError> {
@@ -298,7 +301,7 @@ impl PtCoverageDecoder {
         }
     }
 
-    fn handle_mode_tsx<CE: Debug + AddAssign + From<u8>>(
+    fn handle_mode_tsx<CE: CoverageEntry>(
         &mut self,
         mode_tsx: ModeTsx,
         iteration_state: &mut CovDecIterationState<CE>,
@@ -353,7 +356,7 @@ impl PtCoverageDecoder {
         }
     }
 
-    fn handle_mode_exec<CE: Debug + AddAssign + From<u8>>(
+    fn handle_mode_exec<CE: CoverageEntry>(
         &mut self,
         mode_exec: ModeExec,
         iteration_state: &mut CovDecIterationState<CE>,
@@ -402,7 +405,7 @@ impl PtCoverageDecoder {
         Ok(())
     }
 
-    fn handle_fup<CE: Debug + AddAssign + From<u8>>(
+    fn handle_fup<CE: CoverageEntry>(
         &mut self,
         fup: Fup,
         iteration_state: &mut CovDecIterationState<CE>,
@@ -480,7 +483,7 @@ impl PtCoverageDecoder {
         }
     }
 
-    fn proceed_inst_tip<CE: Debug + AddAssign + From<u8>>(
+    fn proceed_inst_tip<CE: CoverageEntry>(
         &mut self,
         tip: Tip,
         iteration_state: &mut CovDecIterationState<CE>,
@@ -504,7 +507,7 @@ impl PtCoverageDecoder {
 
     /// Proceed decoding the instructions until next decision point, considering the current PT
     /// packet is a TNT
-    fn proceed_inst_tnt<CE: Debug + AddAssign + From<u8>>(
+    fn proceed_inst_tnt<CE: CoverageEntry>(
         &mut self,
         tnt_iter: TntIter,
         iteration_state: &mut CovDecIterationState<CE>,
@@ -609,10 +612,12 @@ impl PtCoverageDecoder {
             let ins = inst_decoder.decode();
             #[cfg(feature = "log_instructions")]
             log::trace!(
-                "\tip: 0x{:x}: {:?} {:?}",
+                "\tip: 0x{:x}: {:?} {:?} raw: {:x?}",
                 inst_decoder.ip() - ins.len() as u64,
                 ins.code(),
                 ins.op0_kind(),
+                &self.builder.images[0].data()
+                    [inst_decoder.position()..inst_decoder.position() + ins.len()],
             );
             if ins.is_invalid() {
                 return Err(PtDecoderError::MalformedInstruction);
@@ -653,14 +658,15 @@ impl PtCoverageDecoder {
         Ok(ret)
     }
 
-    fn add_coverage_entry<CE: Debug + AddAssign + From<u8>>(
+    fn add_coverage_entry<CE: CoverageEntry>(
         &mut self,
         to_ip: u64,
         iteration_state: &mut CovDecIterationState<CE>,
     ) {
         if self.state.save_coverage {
             let cov_entry = coverage_entry(self.state.ip, to_ip, iteration_state.coverage.len());
-            iteration_state.coverage[cov_entry] += 1.into();
+            iteration_state.coverage[cov_entry] =
+                iteration_state.coverage[cov_entry].saturating_add(&1.into());
         }
     }
 }

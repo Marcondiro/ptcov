@@ -1,7 +1,9 @@
 #![cfg_attr(not(test), deny(unsafe_code))]
 #![allow(clippy::just_underscores_and_digits)]
 
-pub use coverage_decoder::{PtCoverageDecoder, PtCoverageDecoderBuilder, PtDecoderError};
+pub use coverage_decoder::{
+    CoverageEntry, PtCoverageDecoder, PtCoverageDecoderBuilder, PtDecoderError,
+};
 pub use cpu::{PtCpu, PtCpuVendor};
 pub use image::PtImage;
 
