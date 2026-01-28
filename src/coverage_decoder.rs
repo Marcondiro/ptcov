@@ -536,8 +536,15 @@ impl PtCoverageDecoder {
                     Return => {
                         if tnt {
                             let to = self.state.ret_comp_stack.pop().expect("empty ret stack"); //todo better error handling
-                            self.add_coverage_entry(to, iteration_state);
-                            self.state.ip = to;
+                            let to_masked = match self.state.mode_exec.addressing_mode() {
+                                AddressingMode::_16 => to & u16::MAX as u64,
+                                AddressingMode::_32 => to & u32::MAX as u64,
+                                AddressingMode::_64 => to,
+                            };
+                            self.add_coverage_entry(to_masked, iteration_state);
+                            self.state.ip = to_masked;
+                            #[cfg(feature = "log_packets")]
+                            log::trace!("TNT taken (return compression) to 0x{:x}", self.state.ip);
                         } else {
                             todo!("better error: broken return compression")
                         }
@@ -590,6 +597,11 @@ impl PtCoverageDecoder {
         if until.is_none()
             && let Some(&(ip, reason)) = self.proceed_inst_cache.get(&self.state.ip)
         {
+            #[cfg(feature = "log_instructions")]
+            log::trace!(
+                "Cache hit: skipping disassembling from 0x{:x} to 0x{ip:x}",
+                self.state.ip
+            );
             self.state.ip = ip;
             return Ok(reason);
         }
@@ -627,6 +639,10 @@ impl PtCoverageDecoder {
             match next_ip(&ins) {
                 Ok(None) => {}
                 Ok(Some(ip)) => {
+                    #[cfg(feature = "retc")]
+                    self.state.ret_comp_stack.push(inst_decoder.ip());
+                    #[cfg(all(feature = "retc", feature = "log_packets"))]
+                    log::trace!("Pushed on retc stack: 0x{:x}", inst_decoder.ip());
                     self.state.ip = ip;
                     inst_decoder = self
                         .state
@@ -678,7 +694,12 @@ fn next_ip(ins: &Instruction) -> Result<Option<u64>, ()> {
     match InstructionClass::from(ins) {
         InstructionClass::Other => Ok(None),
         InstructionClass::JumpDirect | InstructionClass::CallDirect => {
-            Ok(Some(ins.near_branch_target()))
+            let target = ins.near_branch_target();
+            if target == ins.next_ip() {
+                Ok(None)
+            } else {
+                Ok(Some(target))
+            }
         }
         InstructionClass::JumpIndirect
         | InstructionClass::MovCr3
