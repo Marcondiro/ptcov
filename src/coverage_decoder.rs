@@ -544,7 +544,7 @@ impl PtCoverageDecoder {
                             self.add_coverage_entry(to_masked, iteration_state);
                             self.state.ip = to_masked;
                             #[cfg(feature = "log_packets")]
-                            log::trace!("TNT taken (return compression) to 0x{:x}", self.state.ip);
+                            log::trace!("TNT taken (retc) to 0x{:x}", self.state.ip);
                         } else {
                             todo!("better error: broken return compression")
                         }
@@ -555,7 +555,8 @@ impl PtCoverageDecoder {
                     // and continue in the loop without consuming the TNT
                     #[cfg_attr(feature = "retc", expect(unreachable_patterns))]
                     Indirect | FarIndirect | Return => {
-                        // handle possible deferred tips
+                        #[cfg(feature = "log_packets")]
+                        log::trace!("TNT Handling deferred TIP");
                         let deferred = iteration_state.packet_decoder.next_packet()?;
                         let tip = if let PtPacket::Tip(tip) = deferred {
                             tip
@@ -636,23 +637,36 @@ impl PtCoverageDecoder {
             }
             // todo log call for retcomp
 
-            match next_ip(&ins) {
-                Ok(None) => {}
-                Ok(Some(ip)) => {
-                    #[cfg(feature = "retc")]
-                    self.state.ret_comp_stack.push(inst_decoder.ip());
-                    #[cfg(all(feature = "retc", feature = "log_packets"))]
-                    log::trace!("Pushed on retc stack: 0x{:x}", inst_decoder.ip());
-                    self.state.ip = ip;
-                    inst_decoder = self
-                        .state
-                        .reposition_inst_decoder(inst_decoder, &self.builder.images)?;
-                }
-                Err(()) => {
+            match InstructionClass::from(&ins) {
+                // Just proceed to the subsequent instruction, can continue with instruction decoder
+                InstructionClass::Other => continue,
+                InstructionClass::JumpDirect | InstructionClass::CallDirect if ins.near_branch_target() == ins.next_ip() => continue,
+                // Needs trace to proceed
+                InstructionClass::JumpIndirect
+                | InstructionClass::MovCr3
+                | InstructionClass::CallIndirect
+                | InstructionClass::CondBranch
+                | InstructionClass::FarCall
+                | InstructionClass::FarJump
+                | InstructionClass::FarReturn
+                | InstructionClass::Return => {
                     self.state.ip = inst_decoder.ip();
                     break ins;
                 }
+                // Reposition instruction decoder before continuing
+                #[cfg(feature = "retc")]
+                InstructionClass::CallDirect => {
+                    self.state.ret_comp_stack.push(inst_decoder.ip());
+                    #[cfg(feature = "log_packets")]
+                    log::trace!("Pushed on retc stack: 0x{:x}", inst_decoder.ip());
+                },
+                #[cfg_attr(feature = "retc", expect(unreachable_patterns))]
+                InstructionClass::JumpDirect | InstructionClass::CallDirect => {},
             }
+            self.state.ip = ins.near_branch_target();
+            inst_decoder = self
+                .state
+                .reposition_inst_decoder(inst_decoder, &self.builder.images)?;
         };
 
         let ret = match InstructionClass::from(&ins) {
@@ -684,31 +698,6 @@ impl PtCoverageDecoder {
             iteration_state.coverage[cov_entry] =
                 iteration_state.coverage[cov_entry].saturating_add(&1.into());
         }
-    }
-}
-
-/// Retuns Ok(Some(ip)) if it can compute next ip from instruction, and it is not the subsequent
-/// instruction in the code. Returns Ok(None) if the next instruction is the following in the code.
-///Returns Err if decoding needs trace to proceed.
-fn next_ip(ins: &Instruction) -> Result<Option<u64>, ()> {
-    match InstructionClass::from(ins) {
-        InstructionClass::Other => Ok(None),
-        InstructionClass::JumpDirect | InstructionClass::CallDirect => {
-            let target = ins.near_branch_target();
-            if target == ins.next_ip() {
-                Ok(None)
-            } else {
-                Ok(Some(target))
-            }
-        }
-        InstructionClass::JumpIndirect
-        | InstructionClass::MovCr3
-        | InstructionClass::CallIndirect
-        | InstructionClass::CondBranch
-        | InstructionClass::FarCall
-        | InstructionClass::FarJump
-        | InstructionClass::FarReturn
-        | InstructionClass::Return => Err(()),
     }
 }
 
