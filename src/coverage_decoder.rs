@@ -50,13 +50,18 @@ pub struct PtCoverageDecoderBuilder {
     filter_vmx_non_root: bool,
 }
 
+#[cfg(not(feature = "retc"))]
+type InstCache = HashMap<u64, (u64, ProceedInstStopReason)>; // todo cr3 + vmcs should be in the key as well
+#[cfg(feature = "retc")]
+type InstCache = HashMap<u64, (u64, ProceedInstStopReason, (i8, Vec<u64>))>;
+
 #[derive(Debug)]
 pub struct PtCoverageDecoder {
     builder: PtCoverageDecoderBuilder,
 
     is_syncd: bool,
     state: ExecutionState,
-    proceed_inst_cache: HashMap<u64, (u64, ProceedInstStopReason)>, // todo cr3 + vmcs should be in the key as well
+    proceed_inst_cache: InstCache,
 }
 
 #[derive(Debug)]
@@ -596,17 +601,30 @@ impl PtCoverageDecoder {
 
         // Use cache (only if until is None)
         if until.is_none()
-            && let Some(&(ip, reason)) = self.proceed_inst_cache.get(&self.state.ip)
+            && let Some(cache_entry) = self.proceed_inst_cache.get(&self.state.ip)
         {
+            #[cfg(not(feature = "retc"))]
+            let (ip, reason) = cache_entry;
+            #[cfg(feature = "retc")]
+            let (ip, reason, (retc_stack_offset, retc_stack_entries)) = cache_entry;
+            #[cfg(feature = "retc")]
+            if *retc_stack_offset > 0 {
+                self.state.ret_comp_stack.extend_from_slice(retc_stack_entries.as_slice());
+            } else if *retc_stack_offset < 0 {
+                self.state.ret_comp_stack.truncate(self.state.ret_comp_stack.len() + (- retc_stack_offset) as usize);
+            }
+
             #[cfg(feature = "log_instructions")]
             log::trace!(
                 "Cache hit: skipping disassembling from 0x{:x} to 0x{ip:x}",
                 self.state.ip
             );
-            self.state.ip = ip;
-            return Ok(reason);
+            self.state.ip = *ip;
+            return Ok(*reason);
         }
 
+        #[cfg(feature = "retc")]
+        let from_retc_stack_size = self.state.ret_comp_stack.len();
         let from = self.state.ip;
         let mut inst_decoder = self.state.new_inst_decoder(&self.builder.images)?;
         let ins = loop {
@@ -684,7 +702,20 @@ impl PtCoverageDecoder {
             | InstructionClass::Other => unreachable!("These instructions do not need traces"),
         };
 
+        #[cfg(not(feature = "retc"))]
         self.proceed_inst_cache.insert(from, (self.state.ip, ret));
+        #[cfg(feature = "retc")]
+        // make sure that the retc stack has indeed max 64 entries and the casts here are ok
+        let retc_stack_size_diff = self.state.ret_comp_stack.len() as i8 - from_retc_stack_size as i8;
+        #[cfg(feature = "retc")]
+        let retc_stack_diff = if retc_stack_size_diff > 0 {
+            self.state.ret_comp_stack[from_retc_stack_size..].to_vec()
+        } else {
+            Vec::new()
+        };
+        #[cfg(feature = "retc")]
+        self.proceed_inst_cache.insert(from, (self.state.ip, ret, (retc_stack_size_diff, retc_stack_diff)));
+
         Ok(ret)
     }
 

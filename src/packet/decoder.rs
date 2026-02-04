@@ -22,7 +22,7 @@ impl<'a> PtPacketDecoder<'a> {
         let p = PtPacket::parse(self.buffer, &mut self.pos)?;
 
         #[cfg(feature = "log_packets")]
-        log::trace!("PT packet: {p:x?}");
+        log::trace!("{:016x} PT packet: {p:x?}", self.pos);
 
         Ok(p)
     }
