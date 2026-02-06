@@ -50,18 +50,30 @@ pub struct PtCoverageDecoderBuilder {
     filter_vmx_non_root: bool,
 }
 
-#[cfg(not(feature = "retc"))]
-type InstCache = HashMap<u64, (u64, ProceedInstStopReason)>; // todo cr3 + vmcs should be in the key as well
-#[cfg(feature = "retc")]
-type InstCache = HashMap<u64, (u64, ProceedInstStopReason, (i8, Vec<u64>))>;
-
 #[derive(Debug)]
 pub struct PtCoverageDecoder {
     builder: PtCoverageDecoderBuilder,
 
     is_syncd: bool,
     state: ExecutionState,
-    proceed_inst_cache: InstCache,
+    proceed_inst_cache: HashMap<InstCacheKey, InstCacheValue>,
+}
+
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+struct InstCacheKey {
+    from: u64,
+    //todo: cr3
+    vmcs: Option<Vmcs>,
+}
+
+#[derive(Debug)]
+struct InstCacheValue {
+    to: u64,
+    stop_reason: ProceedInstStopReason,
+    #[cfg(feature = "retc")]
+    retc_stack_size_diff: i8,
+    #[cfg(feature = "retc")]
+    retc_stack_diff: Vec<u64>,
 }
 
 #[derive(Debug)]
@@ -601,26 +613,30 @@ impl PtCoverageDecoder {
 
         // Use cache (only if until is None)
         if until.is_none()
-            && let Some(cache_entry) = self.proceed_inst_cache.get(&self.state.ip)
+            && let Some(cache_entry) = self.proceed_inst_cache.get(&InstCacheKey {
+                from: self.state.ip,
+                vmcs: self.state.vmcs,
+            })
         {
-            #[cfg(not(feature = "retc"))]
-            let (ip, reason) = cache_entry;
             #[cfg(feature = "retc")]
-            let (ip, reason, (retc_stack_offset, retc_stack_entries)) = cache_entry;
-            #[cfg(feature = "retc")]
-            if *retc_stack_offset > 0 {
-                self.state.ret_comp_stack.extend_from_slice(retc_stack_entries.as_slice());
-            } else if *retc_stack_offset < 0 {
-                self.state.ret_comp_stack.truncate(self.state.ret_comp_stack.len() + (- retc_stack_offset) as usize);
+            if cache_entry.retc_stack_size_diff > 0 {
+                self.state
+                    .ret_comp_stack
+                    .extend_from_slice(cache_entry.retc_stack_diff.as_slice());
+            } else if cache_entry.retc_stack_size_diff < 0 {
+                self.state.ret_comp_stack.truncate(
+                    self.state.ret_comp_stack.len() + (-cache_entry.retc_stack_size_diff) as usize,
+                );
             }
 
             #[cfg(feature = "log_instructions")]
             log::trace!(
-                "Cache hit: skipping disassembling from 0x{:x} to 0x{ip:x}",
-                self.state.ip
+                "Cache hit: skipping disassembling from 0x{:x} to 0x{:x}",
+                self.state.ip,
+                cache_entry.to
             );
-            self.state.ip = *ip;
-            return Ok(*reason);
+            self.state.ip = cache_entry.to;
+            return Ok(cache_entry.stop_reason);
         }
 
         #[cfg(feature = "retc")]
@@ -658,7 +674,11 @@ impl PtCoverageDecoder {
             match InstructionClass::from(&ins) {
                 // Just proceed to the subsequent instruction, can continue with instruction decoder
                 InstructionClass::Other => continue,
-                InstructionClass::JumpDirect | InstructionClass::CallDirect if ins.near_branch_target() == ins.next_ip() => continue,
+                InstructionClass::JumpDirect | InstructionClass::CallDirect
+                    if ins.near_branch_target() == ins.next_ip() =>
+                {
+                    continue;
+                }
                 // Needs trace to proceed
                 InstructionClass::JumpIndirect
                 | InstructionClass::MovCr3
@@ -677,9 +697,9 @@ impl PtCoverageDecoder {
                     self.state.ret_comp_stack.push(inst_decoder.ip());
                     #[cfg(feature = "log_packets")]
                     log::trace!("Pushed on retc stack: 0x{:x}", inst_decoder.ip());
-                },
+                }
                 #[cfg_attr(feature = "retc", expect(unreachable_patterns))]
-                InstructionClass::JumpDirect | InstructionClass::CallDirect => {},
+                InstructionClass::JumpDirect | InstructionClass::CallDirect => {}
             }
             self.state.ip = ins.near_branch_target();
             inst_decoder = self
@@ -687,7 +707,7 @@ impl PtCoverageDecoder {
                 .reposition_inst_decoder(inst_decoder, &self.builder.images)?;
         };
 
-        let ret = match InstructionClass::from(&ins) {
+        let reason = match InstructionClass::from(&ins) {
             InstructionClass::CondBranch => CondBranch {
                 to: ins.near_branch64(),
             },
@@ -702,21 +722,33 @@ impl PtCoverageDecoder {
             | InstructionClass::Other => unreachable!("These instructions do not need traces"),
         };
 
-        #[cfg(not(feature = "retc"))]
-        self.proceed_inst_cache.insert(from, (self.state.ip, ret));
         #[cfg(feature = "retc")]
         // make sure that the retc stack has indeed max 64 entries and the casts here are ok
-        let retc_stack_size_diff = self.state.ret_comp_stack.len() as i8 - from_retc_stack_size as i8;
+        let retc_stack_size_diff =
+            self.state.ret_comp_stack.len() as i8 - from_retc_stack_size as i8;
         #[cfg(feature = "retc")]
         let retc_stack_diff = if retc_stack_size_diff > 0 {
             self.state.ret_comp_stack[from_retc_stack_size..].to_vec()
         } else {
             Vec::new()
         };
-        #[cfg(feature = "retc")]
-        self.proceed_inst_cache.insert(from, (self.state.ip, ret, (retc_stack_size_diff, retc_stack_diff)));
 
-        Ok(ret)
+        self.proceed_inst_cache.insert(
+            InstCacheKey {
+                from,
+                vmcs: self.state.vmcs,
+            },
+            InstCacheValue {
+                to: self.state.ip,
+                stop_reason: reason,
+                #[cfg(feature = "retc")]
+                retc_stack_size_diff,
+                #[cfg(feature = "retc")]
+                retc_stack_diff,
+            },
+        );
+
+        Ok(reason)
     }
 
     fn add_coverage_entry<CE: CoverageEntry>(

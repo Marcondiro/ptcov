@@ -1,6 +1,6 @@
 use crate::packet::SizedPtPacket;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
 #[repr(transparent)]
 pub struct Vmcs {
     pub(super) raw: [u8; 5],
