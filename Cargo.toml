@@ -1,6 +1,6 @@
 [package]
 name = "ptcov"
-version = "0.0.6"
+version = "0.0.7"
 authors = ["Marco Cavenati <cavenatimarco+ptcov@gmail.com>"]
 edition = "2024"
 rust-version = "1.89.0"
@@ -12,7 +12,7 @@ repository = "https://github.com/Marcondiro/ptcov"
 keywords = ["decoder", "intel", "pt"]
 
 [features]
-default = []
+default = ["retc"]
 # Support for IA32_RTIT_CTL.CYCEn dependent packets
 cyc = []
 # Support for IA32_RTIT_CTL.IA32_RTIT_CTL.EventEn dependent packets
