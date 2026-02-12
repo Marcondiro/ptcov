@@ -211,28 +211,35 @@ impl PtCoverageDecoderBuilder {
         }
     }
 
+    /// Set the CPU model used to produce the traces.
+    ///
+    /// Providing the CPU is optional but, it will allow the decoder to consider the relevant CPU
+    /// erratas, improving decoding quality.
     pub const fn cpu(mut self, cpu: Option<PtCpu>) -> Self {
         self.cpu = cpu;
         self
     }
 
+    /// Consider only execution in VMX non-root when computing coverage, ignore VMX root
+    /// (hypervisor) traces.
     pub const fn filter_vmx_non_root(mut self, filter_vmx_non_root: bool) -> Self {
         self.filter_vmx_non_root = filter_vmx_non_root;
         self
     }
 
+    /// Exact runtime memory image of the executed target.
     pub fn images(mut self, images: Vec<PtImage>) -> Self {
         self.images = images;
         self
     }
 
-    pub fn build(self) -> Result<PtCoverageDecoder, PtDecoderError> {
-        Ok(PtCoverageDecoder {
+    pub fn build(self) -> PtCoverageDecoder {
+        PtCoverageDecoder {
             builder: self,
             state: ExecutionState::new(),
             is_syncd: false,
             proceed_inst_cache: HashMap::new(),
-        })
+        }
     }
 }
 
@@ -243,6 +250,10 @@ impl Default for PtCoverageDecoderBuilder {
 }
 
 impl PtCoverageDecoder {
+    pub const fn builder() -> PtCoverageDecoderBuilder {
+        PtCoverageDecoderBuilder::new()
+    }
+
     pub fn coverage<CE>(
         &mut self,
         pt_trace: &[u8],
