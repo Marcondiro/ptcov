@@ -12,15 +12,8 @@ pub struct TntLong {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum TntIter {
-    TntShortIter(TntShortIter),
-    TntLongIter(TntLongIter),
-}
-
-#[derive(Debug, PartialEq)]
 pub struct TntShortIter {
-    tnt: TntShort,
-    mask: u8,
+    inner: u8,
 }
 
 #[derive(Debug, PartialEq)]
@@ -48,8 +41,8 @@ impl IntoIterator for TntShort {
     type IntoIter = TntShortIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        let mask = 1u8 << (7 - self.raw.leading_zeros());
-        Self::IntoIter { tnt: self, mask }
+        let inner = (self.raw | 0x01) << self.raw.leading_zeros() << 1;
+        Self::IntoIter { inner }
     }
 }
 
@@ -110,38 +103,16 @@ impl SizedPtPacket for TntLong {
     }
 }
 
-impl Iterator for TntIter {
-    type Item = bool;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            TntIter::TntLongIter(l) => l.next(),
-            TntIter::TntShortIter(s) => s.next(),
-        }
-    }
-}
-
-impl From<TntShortIter> for TntIter {
-    fn from(value: TntShortIter) -> Self {
-        Self::TntShortIter(value)
-    }
-}
-
-impl From<TntLongIter> for TntIter {
-    fn from(value: TntLongIter) -> Self {
-        Self::TntLongIter(value)
-    }
-}
-
 impl Iterator for TntShortIter {
     type Item = bool;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.mask >>= 1;
-        if self.mask <= 0b1 {
+        if self.inner == 0x80 {
             None
         } else {
-            Some(self.tnt.raw & self.mask != 0)
+            let res = (self.inner & 0x80) != 0;
+            self.inner <<= 1;
+            Some(res)
         }
     }
 }
@@ -158,27 +129,6 @@ impl Iterator for TntLongIter {
         }
     }
 }
-
-// impl TntIter {
-//     pub const fn has_next(&self) -> bool {
-//         match self {
-//             Self::TntShortIter(s) => s.has_next(),
-//             Self::TntLongIter(l) => l.has_next(),
-//         }
-//     }
-// }
-//
-// impl TntShortIter {
-//     pub const fn has_next(&self) -> bool {
-//         self.mask >> 1 > 0b1
-//     }
-// }
-//
-// impl TntLongIter {
-//     pub const fn has_next(&self) -> bool {
-//         self.mask >> 1 > 0
-//     }
-// }
 
 #[cfg(test)]
 mod tests {

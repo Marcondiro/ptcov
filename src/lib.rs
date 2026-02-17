@@ -1,6 +1,4 @@
 #![doc=include_str!("../README.md")]
-
-#![cfg_attr(not(test), deny(unsafe_code))]
 #![allow(clippy::just_underscores_and_digits)]
 
 pub use coverage_decoder::{

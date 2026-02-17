@@ -1,4 +1,4 @@
-use crate::packet::{PtPacketParseError, SizedPtPacket};
+use crate::packet::SizedPtPacket;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Tsc {
@@ -7,19 +7,21 @@ pub struct Tsc {
 
 impl SizedPtPacket for Tsc {
     fn original_size(&self) -> usize {
-        8
+        Self::SIZE
     }
 }
 
 impl Tsc {
-    pub(super) fn try_from_payload(payload: &[u8]) -> Result<Self, PtPacketParseError> {
-        // the try_into cannot fail, therefore the unwrap() can never panic.
-        let raw = payload
-            .get(..8)
-            .ok_or(PtPacketParseError::MalformedPacket)?
-            .try_into()
-            .unwrap();
+    pub(crate) const SIZE: usize = 8;
 
-        Ok(Self { raw })
-    }
+    // pub(super) fn try_from_payload(payload: &[u8]) -> Result<Self, PtPacketParseError> {
+    //     // the try_into cannot fail, therefore the unwrap() can never panic.
+    //     let raw = payload
+    //         .get(..8)
+    //         .ok_or(PtPacketParseError::MalformedPacket)?
+    //         .try_into()
+    //         .unwrap();
+    //
+    //     Ok(Self { raw })
+    // }
 }

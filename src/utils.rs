@@ -9,9 +9,11 @@ pub const fn sign_extend_48(x: u64) -> u64 {
 pub const fn fmix64(mut k: u64) -> u64 {
     k ^= k >> 33;
     k = k.wrapping_mul(0xff51afd7ed558ccd);
-    k ^= k >> 33;
-    k = k.wrapping_mul(0xc4ceb9fe1a85ec53);
-    k ^= k >> 33;
+    if cfg!(feature = "stronger_hash") {
+        k ^= k >> 33;
+        k = k.wrapping_mul(0xc4ceb9fe1a85ec53);
+        k ^= k >> 33;
+    }
 
     k
 }

@@ -4,14 +4,15 @@ use crate::packet::decoder::PtPacketDecoder;
 use crate::packet::mode::{AddressingMode, ModeExec, ModeTsx, TransactionState};
 use crate::packet::pip::Pip;
 use crate::packet::tip::{Fup, Tip, TipPgd, TipPge};
-use crate::packet::tnt::TntIter;
 use crate::packet::vmcs::Vmcs;
 use crate::packet::{PtPacket, PtPacketParseError};
 use crate::utils::fmix64;
 use iced_x86::{Code, FlowControl, Instruction, Register};
 use num_traits::SaturatingAdd;
-use std::collections::HashMap;
 use std::fmt::Debug;
+
+mod cache;
+use cache::*;
 
 pub trait CoverageEntry: Copy + Debug + From<u8> + SaturatingAdd {}
 impl<T> CoverageEntry for T where T: Copy + Debug + From<u8> + SaturatingAdd {}
@@ -56,24 +57,7 @@ pub struct PtCoverageDecoder {
 
     is_syncd: bool,
     state: ExecutionState,
-    proceed_inst_cache: HashMap<InstCacheKey, InstCacheValue>,
-}
-
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-struct InstCacheKey {
-    from: u64,
-    //todo: cr3
-    vmcs: Option<Vmcs>,
-}
-
-#[derive(Debug)]
-struct InstCacheValue {
-    to: u64,
-    stop_reason: ProceedInstStopReason,
-    #[cfg(feature = "retc")]
-    retc_stack_size_diff: i8,
-    #[cfg(feature = "retc")]
-    retc_stack_diff: Vec<u64>,
+    proceed_inst_cache: Cache,
 }
 
 #[derive(Debug)]
@@ -238,7 +222,7 @@ impl PtCoverageDecoderBuilder {
             builder: self,
             state: ExecutionState::new(),
             is_syncd: false,
-            proceed_inst_cache: HashMap::new(),
+            proceed_inst_cache: Cache::default(),
         }
     }
 }
@@ -283,10 +267,10 @@ impl PtCoverageDecoder {
 
         match packet {
             PtPacket::TntShort(tnt_s) => {
-                self.proceed_inst_tnt(tnt_s.into_iter().into(), iteration_state)?
+                self.proceed_inst_tnt(tnt_s.into_iter(), iteration_state)?
             }
             PtPacket::TntLong(tnt_l) => {
-                self.proceed_inst_tnt(tnt_l.into_iter().into(), iteration_state)?
+                self.proceed_inst_tnt(tnt_l.into_iter(), iteration_state)?
             }
             PtPacket::Tip(tip) => self.proceed_inst_tip(tip, iteration_state)?,
             PtPacket::TipPge(tip_pge) => self.handle_tip_pge(tip_pge)?,
@@ -304,7 +288,6 @@ impl PtCoverageDecoder {
                     packets: vec![PtPacket::PsbEnd(psb_end)],
                 });
             }
-            _ => {} // Ignore other packets
         };
         Ok(())
     }
@@ -378,9 +361,13 @@ impl PtCoverageDecoder {
             return Err(PtDecoderError::MalformedPacket);
         }
 
-        match self.proceed_inst_until(Some(self.state.tip_last_ip))? {
-            ProceedInstStopReason::UntilIpReached => Ok(()),
-            _ => Err(PtDecoderError::IncoherentImage),
+        if cfg!(feature = "more_checks") {
+            match self.proceed_inst_until(Some(self.state.tip_last_ip))? {
+                ProceedInstStopReason::UntilIpReached => Ok(()),
+                _ => Err(PtDecoderError::IncoherentImage),
+            }
+        } else {
+            Ok(())
         }
     }
 
@@ -481,9 +468,13 @@ impl PtCoverageDecoder {
         use ProceedInstStopReason::*;
 
         let ret = if tip_pgd.ip(&mut self.state.tip_last_ip) {
-            match self.proceed_inst_until(Some(self.state.tip_last_ip))? {
-                CondBranch { .. } | Indirect | FarIndirect | UntilIpReached | Return => Ok(()),
-                MovCr3 => Err(PtDecoderError::IncoherentImage),
+            if cfg!(feature = "more_checks") {
+                match self.proceed_inst_until(Some(self.state.tip_last_ip))? {
+                    CondBranch { .. } | Indirect | FarIndirect | UntilIpReached | Return => Ok(()),
+                    MovCr3 => Err(PtDecoderError::IncoherentImage),
+                }
+            } else {
+                Ok(())
             }
         } else {
             // might be caused by:
@@ -535,9 +526,9 @@ impl PtCoverageDecoder {
 
     /// Proceed decoding the instructions until next decision point, considering the current PT
     /// packet is a TNT
-    fn proceed_inst_tnt<CE: CoverageEntry>(
+    fn proceed_inst_tnt<CE: CoverageEntry, TI: Iterator<Item = bool>>(
         &mut self,
-        tnt_iter: TntIter,
+        tnt_iter: TI,
         iteration_state: &mut CovDecIterationState<CE>,
     ) -> Result<(), PtDecoderError> {
         use ProceedInstStopReason::*;
@@ -612,13 +603,12 @@ impl PtCoverageDecoder {
         Ok(())
     }
 
+    #[inline]
     fn proceed_inst_until(
         &mut self,
         until: Option<u64>,
     ) -> Result<ProceedInstStopReason, PtDecoderError> {
-        use ProceedInstStopReason::*;
-
-        if !self.state.packet_en {
+        if cfg!(feature = "more_checks") && !self.state.packet_en {
             return Err(PtDecoderError::IncoherentState);
         }
 
@@ -626,7 +616,7 @@ impl PtCoverageDecoder {
         if until.is_none()
             && let Some(cache_entry) = self.proceed_inst_cache.get(&InstCacheKey {
                 from: self.state.ip,
-                vmcs: self.state.vmcs,
+                // vmcs: self.state.vmcs,
             })
         {
             #[cfg(feature = "retc")]
@@ -647,8 +637,17 @@ impl PtCoverageDecoder {
                 cache_entry.to
             );
             self.state.ip = cache_entry.to;
-            return Ok(cache_entry.stop_reason);
+            Ok(cache_entry.stop_reason)
+        } else {
+            self.proceed_inst_until_slow_path(until)
         }
+    }
+
+    fn proceed_inst_until_slow_path(
+        &mut self,
+        until: Option<u64>,
+    ) -> Result<ProceedInstStopReason, PtDecoderError> {
+        use ProceedInstStopReason::*;
 
         #[cfg(feature = "retc")]
         let from_retc_stack_size = self.state.ret_comp_stack.len();
@@ -680,7 +679,6 @@ impl PtCoverageDecoder {
             if ins.is_invalid() {
                 return Err(PtDecoderError::MalformedInstruction);
             }
-            // todo log call for retcomp
 
             match InstructionClass::from(&ins) {
                 // Just proceed to the subsequent instruction, can continue with instruction decoder
@@ -747,7 +745,7 @@ impl PtCoverageDecoder {
         self.proceed_inst_cache.insert(
             InstCacheKey {
                 from,
-                vmcs: self.state.vmcs,
+                // vmcs: self.state.vmcs,
             },
             InstCacheValue {
                 to: self.state.ip,
@@ -775,6 +773,7 @@ impl PtCoverageDecoder {
     }
 }
 
+#[inline]
 const fn coverage_entry(from: u64, to: u64, map_len: usize) -> usize {
     (fmix64(from) ^ fmix64(to)) as usize % map_len
 }
@@ -788,10 +787,6 @@ fn decode_psbplus<CE: Debug>(
     loop {
         match iteration_state.packet_decoder.next_packet()? {
             PtPacket::PsbEnd(..) => return Ok(state),
-            #[cfg(feature = "tsc")]
-            PtPacket::Tsc(..) => todo!(),
-            #[cfg(all(feature = "tsc", feature = "mtc"))]
-            PtPacket::Tma(..) => todo!(),
             PtPacket::Pip(pip) => state.pip = pip,
             PtPacket::Vmcs(vmcs) => state.vmcs = Some(vmcs),
             PtPacket::ModeTsx(mode_tsx) => state.mode_tsx = mode_tsx,
@@ -807,10 +802,6 @@ fn decode_psbplus<CE: Debug>(
                     state.packet_en = false;
                 }
             }
-            #[cfg(feature = "cyc")]
-            PtPacket::Cyc(..) => todo!(),
-            #[cfg(feature = "mtc")]
-            PtPacket::Mtc(..) => todo!(),
             PtPacket::Ovf(..) => todo!(),
             _ => return Err(PtDecoderError::MalformedPsbPlus),
         }

@@ -1,4 +1,4 @@
-use crate::packet::{PtPacketParseError, SizedPtPacket};
+use crate::packet::SizedPtPacket;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Mtc {
@@ -7,16 +7,18 @@ pub struct Mtc {
 
 impl SizedPtPacket for Mtc {
     fn original_size(&self) -> usize {
-        2
+        Self::SIZE
     }
 }
 
 impl Mtc {
-    pub(crate) fn try_from_payload(payload: &[u8]) -> Result<Self, PtPacketParseError> {
-        if payload.is_empty() {
-            Err(PtPacketParseError::MalformedPacket)
-        } else {
-            Ok(Self { raw: payload[0] })
-        }
-    }
+    pub(crate) const SIZE: usize = 2;
+
+    // pub(crate) fn try_from_payload(payload: &[u8]) -> Result<Self, PtPacketParseError> {
+    //     if payload.is_empty() {
+    //         Err(PtPacketParseError::MalformedPacket)
+    //     } else {
+    //         Ok(Self { raw: payload[0] })
+    //     }
+    // }
 }

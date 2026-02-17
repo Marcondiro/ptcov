@@ -57,9 +57,8 @@ impl Tip {
         true
     }
 
-    /// Panics if input length is 0
-    pub(super) fn try_from_payload(payload: &[u8]) -> Result<Self, PtPacketParseError> {
-        Ok(match (payload[0] & Tip::IPBYTES_MASK, &payload[1..]) {
+    pub(super) fn try_from_payload(b0: &u8, rest: &[u8]) -> Result<Self, PtPacketParseError> {
+        Ok(match (b0 & Tip::IPBYTES_MASK, rest) {
             (IpBytes::NONE, [..]) => Self {
                 ip_bytes: IpBytes::None,
                 target_ip: 0,

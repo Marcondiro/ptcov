@@ -12,7 +12,7 @@ repository = "https://github.com/Marcondiro/ptcov"
 keywords = ["decoder", "intel", "pt"]
 
 [features]
-default = ["retc"]
+default = ["retc", "more_checks", "stronger_hash"]
 # Support for IA32_RTIT_CTL.CYCEn dependent packets
 cyc = []
 # Support for IA32_RTIT_CTL.IA32_RTIT_CTL.EventEn dependent packets
@@ -30,6 +30,12 @@ pwr = []
 retc = []
 # Support for IA32_RTIT_CTL.TSCEn dependent packets
 tsc = []
+
+# Perform more consistency checks even if not strictly necessary for trace decoding.
+# Without this feature, decoding might not detect inconsistencies in traces and give less precise errors.
+more_checks = []
+# Use a stronger hasher when filling the coverage map
+stronger_hash = []
 
 log = ["log_packets", "log_instructions"]
 log_packets = ["dep:log"]
