@@ -482,9 +482,15 @@ impl PtCoverageDecoder {
             //   precise ip where tracing actually stopped... Let's ignore this case.
             // - a conditional branch (replaces TNT)
             // - Change of CPL/CR3
-            match self.proceed_inst_until(None)? {
-                CondBranch { .. } | Indirect | FarIndirect | MovCr3 | Return => Ok(()),
-                UntilIpReached => unreachable!("until parameter is set to None"),
+            //
+            // try to proceed with instructions, on error silently ignore and continue.
+            if let Ok(stop_reason) = self.proceed_inst_until(None) {
+                match stop_reason {
+                    CondBranch { .. } | Indirect | FarIndirect | MovCr3 | Return => Ok(()),
+                    UntilIpReached => unreachable!("until parameter is set to None"),
+                }
+            } else {
+                Ok(())
             }
         };
 
