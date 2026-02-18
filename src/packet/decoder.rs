@@ -28,21 +28,29 @@ impl<'a> PtPacketDecoder<'a> {
         Ok(p)
     }
 
-    pub fn rollback_one_packet(&mut self, packet: PtPacket) -> Result<(), PtDecoderError> {
-        let mut pos = self.pos.checked_sub(packet.original_size()).ok_or(
-            PtDecoderError::InvalidPacketSequence {
-                packets: vec![packet.clone()],
-            },
-        )?;
-        let parsed = PtPacket::parse(self.buffer, &mut pos)?;
-        if parsed == packet {
-            self.pos -= packet.original_size();
-            Ok(())
-        } else {
-            Err(PtDecoderError::InvalidPacketSequence {
-                packets: vec![packet],
-            })
-        }
+    // pub fn rollback_one_packet(&mut self, packet: PtPacket) -> Result<(), PtDecoderError> {
+    //     let mut pos = self.pos.checked_sub(packet.original_size()).ok_or(
+    //         PtDecoderError::InvalidPacketSequence {
+    //             packets: vec![packet.clone()],
+    //         },
+    //     )?;
+    //     let parsed = PtPacket::parse(self.buffer, &mut pos)?;
+    //     if parsed == packet {
+    //         self.pos -= packet.original_size();
+    //         Ok(())
+    //     } else {
+    //         Err(PtDecoderError::InvalidPacketSequence {
+    //             packets: vec![packet],
+    //         })
+    //     }
+    // }
+
+    pub const fn pos(&self) -> usize {
+        self.pos
+    }
+
+    pub const fn set_pos(&mut self, pos: usize) {
+        self.pos = pos
     }
 }
 
@@ -111,25 +119,25 @@ mod tests {
             PtPacket::PsbEnd(PsbEnd {}),
             PtPacket::ModeExec(ModeExec::new(AddressingMode::_64, false)),
             PtPacket::TipPge(TipPge::try_from_payload(&TRACE[0x1f], &TRACE[0x20..]).unwrap()),
-            PtPacket::TntShort(TntShort::new(&[false, false])),
+            PtPacket::Tnt(TntShort::new(&[false, false]).into_iter()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x2f], &TRACE[0x30..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x38], &TRACE[0x39..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x3b], &TRACE[0x3c..]).unwrap()),
-            PtPacket::TntShort(TntShort::new(&[false, true])),
+            PtPacket::Tnt(TntShort::new(&[false, true]).into_iter()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x41], &TRACE[0x42..]).unwrap()),
-            PtPacket::TntShort(TntShort::new(&[true])),
+            PtPacket::Tnt(TntShort::new(&[true]).into_iter()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x48], &TRACE[0x49..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x4b], &TRACE[0x4c..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x50], &TRACE[0x51..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x53], &TRACE[0x54..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x58], &TRACE[0x59..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x5b], &TRACE[0x5c..]).unwrap()),
-            PtPacket::TntShort(TntShort::new(&[true, true, true, false, false, true])),
+            PtPacket::Tnt(TntShort::new(&[true, true, true, false, false, true]).into_iter()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x61], &TRACE[0x62..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x68], &TRACE[0x69..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x70], &TRACE[0x71..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x78], &TRACE[0x79..]).unwrap()),
-            PtPacket::TntShort(TntShort::new(&[false, true])),
+            PtPacket::Tnt(TntShort::new(&[false, true]).into_iter()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x80], &TRACE[0x81..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x88], &TRACE[0x89..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x90], &TRACE[0x91..]).unwrap()),
@@ -137,28 +145,28 @@ mod tests {
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x9d], &TRACE[0x9e..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0xa0], &TRACE[0xa1..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0xa8], &TRACE[0xa9..]).unwrap()),
-            PtPacket::TntShort(TntShort::new(&[false, true, false, true])),
+            PtPacket::Tnt(TntShort::new(&[false, true, false, true]).into_iter()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0xb0], &TRACE[0xb1..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0xb8], &TRACE[0xb9..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0xc0], &TRACE[0xc1..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0xc5], &TRACE[0xc6..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0xc8], &TRACE[0xc9..]).unwrap()),
-            PtPacket::TntShort(TntShort::new(&[false, true, true, true])),
+            PtPacket::Tnt(TntShort::new(&[false, true, true, true]).into_iter()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0xd0], &TRACE[0xd1..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0xd7], &TRACE[0xd8..]).unwrap()),
-            PtPacket::TntShort(TntShort::new(&[false, false])),
+            PtPacket::Tnt(TntShort::new(&[false, false]).into_iter()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0xe7], &TRACE[0xe8..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0xf7], &TRACE[0xf8..]).unwrap()),
-            PtPacket::TntShort(TntShort::new(&[true])),
+            PtPacket::Tnt(TntShort::new(&[true]).into_iter()),
             PtPacket::TipPgd(TipPgd::try_from_payload(&TRACE[0x101], &TRACE[0x102..]).unwrap()),
             PtPacket::TipPge(TipPge::try_from_payload(&TRACE[0x102], &TRACE[0x103..]).unwrap()),
-            PtPacket::TntShort(TntShort::new(&[false])),
+            PtPacket::Tnt(TntShort::new(&[false]).into_iter()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x107], &TRACE[0x108..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x110], &TRACE[0x111..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x115], &TRACE[0x116..]).unwrap()),
-            PtPacket::TntShort(TntShort::new(&[true])),
+            PtPacket::Tnt(TntShort::new(&[true]).into_iter()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x119], &TRACE[0x11a..]).unwrap()),
-            PtPacket::TntShort(TntShort::new(&[false])),
+            PtPacket::Tnt(TntShort::new(&[false]).into_iter()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x120], &TRACE[0x121..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x125], &TRACE[0x126..]).unwrap()),
             PtPacket::Tip(Tip::try_from_payload(&TRACE[0x128], &TRACE[0x129..]).unwrap()),

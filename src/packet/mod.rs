@@ -11,7 +11,7 @@ use crate::packet::psb::{Psb, PsbEnd};
 use crate::packet::tip::{Fup, Tip, TipPgd, TipPge};
 #[cfg(all(feature = "tsc", feature = "mtc"))]
 use crate::packet::tma::Tma;
-use crate::packet::tnt::{TntLong, TntShort};
+use crate::packet::tnt::{TntIter, TntLong, TntShort};
 use crate::packet::trace_stop::TraceStop;
 use crate::packet::trig::Trig;
 #[cfg(feature = "tsc")]
@@ -63,7 +63,7 @@ pub trait SizedPtPacket {
 #[derive(Debug, PartialEq, Clone)]
 pub enum PtPacket {
     /// Taken/Not-taken (TNT) short Packet
-    TntShort(TntShort),
+    Tnt(TntIter),
     /// Taken/Not-taken (TNT) long Packet
     TntLong(TntLong),
     /// Target IP (TIP) Packet
@@ -144,10 +144,10 @@ impl PtPacket {
     fn parse(input: &[u8], pos: &mut usize) -> Result<Self, PtPacketParseError> {
         let b0 = loop {
             let b = input.get(*pos).ok_or(PtPacketParseError::Eof)?;
-            if *b != 0 {
+            if *b != Pad::B0 {
                 break b;
             }
-            *pos += 1;
+            *pos += Pad::SIZE;
         };
 
         if (b0 & 0x01 == 0) && (*b0 >= 0x04) {
@@ -155,7 +155,20 @@ impl PtPacket {
             // terminator) at bit 2 or higher. Therefore, tnt.8 packets raw value is
             // always >= 4. This check eliminates any ambiguity with other packet types.
             *pos += TntShort::SIZE;
-            Ok(Self::TntShort(TntShort { raw: *b0 }))
+            let mut tnt_iter = TntShort { raw: *b0 }.into_iter();
+            while let Some(b) = input.get(*pos) {
+                if (b & 0x01 == 0) && (*b >= 0x04) {
+                    unsafe { tnt_iter.push(TntShort { raw: *b }) }
+                    *pos += TntShort::SIZE;
+                    if tnt_iter.can_push_tnt_short() {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            Ok(Self::Tnt(tnt_iter))
         } else {
             Self::parse_slow_path(input, pos)
         }
@@ -175,7 +188,7 @@ impl PtPacket {
                     // terminator) at bit 2 or higher. Therefore, tnt.8 packets raw value is
                     // always >= 4. This check eliminates any ambiguity with other packet types.
                     *pos += TntShort::SIZE;
-                    Self::TntShort(TntShort { raw: *b0 })
+                    Self::Tnt(TntShort { raw: *b0 }.into_iter())
                 }
                 #[cfg(feature = "cyc")]
                 [b0, ..] if b0 & 0x03 == 0x03 => {
@@ -304,53 +317,53 @@ impl PtPacket {
         })
     }
 }
-impl SizedPtPacket for PtPacket {
-    fn original_size(&self) -> usize {
-        match self {
-            PtPacket::TntShort(..) => TntShort::SIZE,
-            PtPacket::TntLong(..) => TntLong::SIZE,
-            PtPacket::Tip(inner) => inner.original_size(),
-            PtPacket::TipPge(inner) => inner.original_size(),
-            PtPacket::TipPgd(inner) => inner.original_size(),
-            PtPacket::Fup(inner) => inner.original_size(),
-            PtPacket::Pip(..) => Pip::SIZE,
-            PtPacket::ModeExec(..) => mode::SIZE,
-            PtPacket::ModeTsx(..) => mode::SIZE,
-            PtPacket::TraceStop(..) => TraceStop::SIZE,
-            // #[cfg(feature = "tsc")]
-            // PtPacket::Tsc(inner) => inner.original_size(),
-            // #[cfg(feature = "mtc")]
-            // PtPacket::Mtc(inner) => inner.original_size(),
-            // #[cfg(all(feature = "tsc", feature = "mtc"))]
-            // PtPacket::Tma(inner) => inner.original_size(),
-            // #[cfg(feature = "cyc")]
-            // PtPacket::Cyc(inner) => inner.original_size(),
-            PtPacket::Vmcs(..) => Vmcs::SIZE,
-            PtPacket::Ovf(..) => Ovf::SIZE,
-            PtPacket::Psb(..) => Psb::SIZE,
-            PtPacket::PsbEnd(..) => PsbEnd::SIZE,
-            // PtPacket::Mnt(..) => Mnt::SIZE,
-            // #[cfg(feature = "ptw")]
-            // PtPacket::Ptw(inner) => inner.original_size(),
-            // #[cfg(feature = "pwr")]
-            // PtPacket::Exstop(inner) => inner.original_size(),
-            // #[cfg(feature = "pwr")]
-            // PtPacket::Mwait(inner) => inner.original_size(),
-            // #[cfg(feature = "pwr")]
-            // PtPacket::Pwre(inner) => inner.original_size(),
-            // #[cfg(feature = "pwr")]
-            // PtPacket::Pwrx(inner) => inner.original_size(),
-            // #[cfg(feature = "pebs")]
-            // PtPacket::Bbp(inner) => inner.original_size(),
-            // #[cfg(feature = "pebs")]
-            // PtPacket::Bip(inner) => inner.original_size(),
-            // #[cfg(feature = "pebs")]
-            // PtPacket::Bep(inner) => inner.original_size(),
-            // #[cfg(feature = "event")]
-            // PtPacket::Cfe(inner) => inner.original_size(),
-            // #[cfg(feature = "event")]
-            // PtPacket::Evd(inner) => inner.original_size(),
-            // PtPacket::Trig(..) => Trig::SIZE,
-        }
-    }
-}
+// impl SizedPtPacket for PtPacket {
+//     fn original_size(&self) -> usize {
+//         match self {
+//             PtPacket::TntShort(..) => TntShort::SIZE,
+//             PtPacket::TntLong(..) => TntLong::SIZE,
+//             PtPacket::Tip(inner) => inner.original_size(),
+//             PtPacket::TipPge(inner) => inner.original_size(),
+//             PtPacket::TipPgd(inner) => inner.original_size(),
+//             PtPacket::Fup(inner) => inner.original_size(),
+//             PtPacket::Pip(..) => Pip::SIZE,
+//             PtPacket::ModeExec(..) => mode::SIZE,
+//             PtPacket::ModeTsx(..) => mode::SIZE,
+//             PtPacket::TraceStop(..) => TraceStop::SIZE,
+//             // #[cfg(feature = "tsc")]
+//             // PtPacket::Tsc(inner) => inner.original_size(),
+//             // #[cfg(feature = "mtc")]
+//             // PtPacket::Mtc(inner) => inner.original_size(),
+//             // #[cfg(all(feature = "tsc", feature = "mtc"))]
+//             // PtPacket::Tma(inner) => inner.original_size(),
+//             // #[cfg(feature = "cyc")]
+//             // PtPacket::Cyc(inner) => inner.original_size(),
+//             PtPacket::Vmcs(..) => Vmcs::SIZE,
+//             PtPacket::Ovf(..) => Ovf::SIZE,
+//             PtPacket::Psb(..) => Psb::SIZE,
+//             PtPacket::PsbEnd(..) => PsbEnd::SIZE,
+//             // PtPacket::Mnt(..) => Mnt::SIZE,
+//             // #[cfg(feature = "ptw")]
+//             // PtPacket::Ptw(inner) => inner.original_size(),
+//             // #[cfg(feature = "pwr")]
+//             // PtPacket::Exstop(inner) => inner.original_size(),
+//             // #[cfg(feature = "pwr")]
+//             // PtPacket::Mwait(inner) => inner.original_size(),
+//             // #[cfg(feature = "pwr")]
+//             // PtPacket::Pwre(inner) => inner.original_size(),
+//             // #[cfg(feature = "pwr")]
+//             // PtPacket::Pwrx(inner) => inner.original_size(),
+//             // #[cfg(feature = "pebs")]
+//             // PtPacket::Bbp(inner) => inner.original_size(),
+//             // #[cfg(feature = "pebs")]
+//             // PtPacket::Bip(inner) => inner.original_size(),
+//             // #[cfg(feature = "pebs")]
+//             // PtPacket::Bep(inner) => inner.original_size(),
+//             // #[cfg(feature = "event")]
+//             // PtPacket::Cfe(inner) => inner.original_size(),
+//             // #[cfg(feature = "event")]
+//             // PtPacket::Evd(inner) => inner.original_size(),
+//             // PtPacket::Trig(..) => Trig::SIZE,
+//         }
+//     }
+// }

@@ -1,7 +1,7 @@
 use crate::packet::SizedPtPacket;
 use std::fmt::{Debug, Formatter};
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct TntShort {
     pub(super) raw: u8,
 }
@@ -14,6 +14,11 @@ pub struct TntLong {
 #[derive(Debug, PartialEq)]
 pub struct TntShortIter {
     inner: u8,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TntIter {
+    inner: u64,
 }
 
 #[derive(Debug, PartialEq)]
@@ -38,10 +43,10 @@ impl Debug for TntShort {
 
 impl IntoIterator for TntShort {
     type Item = bool;
-    type IntoIter = TntShortIter;
+    type IntoIter = TntIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        let inner = (self.raw | 0x01) << self.raw.leading_zeros() << 1;
+        let inner = (((self.raw | 0x01) << self.raw.leading_zeros() << 1) as u64) << (64 - 8);
         Self::IntoIter { inner }
     }
 }
@@ -103,6 +108,40 @@ impl SizedPtPacket for TntLong {
     }
 }
 
+impl Iterator for TntIter {
+    type Item = bool;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        const MASK: u64 = 1 << 63;
+
+        if self.inner == MASK {
+            None
+        } else {
+            let res = (self.inner & MASK) != 0;
+            self.inner <<= 1;
+            Some(res)
+        }
+    }
+}
+
+impl TntIter {
+    /// Check if the iterator has space for at least one more TntShort
+    pub fn can_push_tnt_short(&self) -> bool {
+        // tnt short contains at most 6 tnt bits
+        self.inner & 0x3f == 0
+    }
+
+    /// SAFETY: the caller must make sure that can_push_tnt_short is true
+    pub unsafe fn push(&mut self, tnt: TntShort) {
+        let free = self.inner.trailing_zeros();
+        // clear the trailing end flag
+        self.inner &= !1 << free;
+
+        // push the tnt content and the trailing
+        self.inner |= (((tnt.raw | 0x01) << tnt.raw.leading_zeros() << 1) as u64) << (free - 7);
+    }
+}
+
 impl Iterator for TntShortIter {
     type Item = bool;
 
@@ -138,10 +177,17 @@ mod tests {
     fn iterate_tnt_short() {
         let raw = 0b00110100u8;
         let p = TntShort { raw };
+        let p2 = p.clone();
+        let mut iter = p.into_iter();
 
-        let right = vec![true, false].repeat(2);
+        assert!(iter.can_push_tnt_short());
+        unsafe {
+            iter.push(p2);
+        }
 
-        assert_eq!(p.into_iter().collect::<Vec<_>>(), right);
+        let right = vec![true, false].repeat(2).repeat(2);
+
+        assert_eq!(iter.collect::<Vec<_>>(), right);
     }
 
     #[test]

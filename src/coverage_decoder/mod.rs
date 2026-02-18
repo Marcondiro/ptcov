@@ -266,9 +266,7 @@ impl PtCoverageDecoder {
         let packet = iteration_state.packet_decoder.next_packet()?;
 
         match packet {
-            PtPacket::TntShort(tnt_s) => {
-                self.proceed_inst_tnt(tnt_s.into_iter(), iteration_state)?
-            }
+            PtPacket::Tnt(tnt_iter) => self.proceed_inst_tnt(tnt_iter, iteration_state)?,
             PtPacket::TntLong(tnt_l) => {
                 self.proceed_inst_tnt(tnt_l.into_iter(), iteration_state)?
             }
@@ -300,14 +298,16 @@ impl PtCoverageDecoder {
         self.state.ret_comp_stack.clear();
 
         // state.packet_en might have changed during the overflow
+        let packet_decoder_pos = iteration_state.packet_decoder.pos();
         match iteration_state.packet_decoder.next_packet()? {
             PtPacket::Fup(fup) => {
                 self.state.packet_en = true;
                 self.handle_fup_after_ovf(fup)
             }
-            p => {
+            _ => {
                 self.state.packet_en = false;
-                iteration_state.packet_decoder.rollback_one_packet(p)
+                iteration_state.packet_decoder.set_pos(packet_decoder_pos);
+                Ok(())
             }
         }
     }
