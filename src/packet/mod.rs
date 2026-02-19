@@ -62,10 +62,8 @@ pub trait SizedPtPacket {
 #[non_exhaustive]
 #[derive(Debug, PartialEq, Clone)]
 pub enum PtPacket {
-    /// Taken/Not-taken (TNT) short Packet
+    /// Taken/Not-taken (TNT)
     Tnt(TntIter),
-    /// Taken/Not-taken (TNT) long Packet
-    TntLong(TntLong),
     /// Target IP (TIP) Packet
     Tip(Tip),
     /// Packet Generation Enable (TIP.PGE) Packet
@@ -142,25 +140,29 @@ pub enum PtPacketParseError {
 impl PtPacket {
     #[inline(always)]
     fn parse(input: &[u8], pos: &mut usize) -> Result<Self, PtPacketParseError> {
-        let b0 = loop {
-            let b = input.get(*pos).ok_or(PtPacketParseError::Eof)?;
+        let mut b = input.get(*pos).ok_or(PtPacketParseError::Eof)?;
+
+        // consume padding
+        loop {
             if *b != Pad::B0 {
                 break b;
             }
             *pos += Pad::SIZE;
-        };
+            b = input.get(*pos).ok_or(PtPacketParseError::Eof)?;
+        }
 
-        if (b0 & 0x01 == 0) && (*b0 >= 0x04) {
+        if (b & 0x01 == 0) && (*b >= 0x04) {
             // All tnt short packets have at least a bit set (that acts as payload
             // terminator) at bit 2 or higher. Therefore, tnt.8 packets raw value is
             // always >= 4. This check eliminates any ambiguity with other packet types.
             *pos += TntShort::SIZE;
-            let mut tnt_iter = TntShort { raw: *b0 }.into_iter();
+            let mut tnt_iter = TntShort { raw: *b }.into_iter();
+
             while let Some(b) = input.get(*pos) {
                 if (b & 0x01 == 0) && (*b >= 0x04) {
                     unsafe { tnt_iter.push(TntShort { raw: *b }) }
                     *pos += TntShort::SIZE;
-                    if tnt_iter.can_push_tnt_short() {
+                    if !tnt_iter.can_push_tnt_short() {
                         break;
                     }
                 } else {
@@ -265,9 +267,12 @@ impl PtPacket {
                 }
                 [0x02, TntLong::B1, b2, b3, b4, b5, b6, b7, ..] => {
                     *pos += TntLong::SIZE;
-                    Self::TntLong(TntLong {
-                        raw: [*b2, *b3, *b4, *b5, *b6, *b7],
-                    })
+                    Self::Tnt(
+                        TntLong {
+                            raw: [*b2, *b3, *b4, *b5, *b6, *b7],
+                        }
+                        .into_iter(),
+                    )
                 }
 
                 #[cfg(all(feature = "tsc", feature = "mtc"))]

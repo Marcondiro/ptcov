@@ -1,4 +1,3 @@
-use crate::packet::SizedPtPacket;
 use std::fmt::{Debug, Formatter};
 
 #[derive(Clone, Copy, PartialEq)]
@@ -11,32 +10,20 @@ pub struct TntLong {
     pub(super) raw: [u8; 6],
 }
 
-#[derive(Debug, PartialEq)]
-pub struct TntShortIter {
-    inner: u8,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct TntIter {
     inner: u64,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct TntLongIter {
-    tnt: TntLong,
-    mask: u64,
-}
-
 impl Debug for TntShort {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let tnt_str = self
-            .clone()
-            .into_iter()
-            .map(|e| if e { 'T' } else { 'N' })
-            .fold(String::new(), |mut acc, e| {
+        let tnt_str = self.into_iter().map(|e| if e { 'T' } else { 'N' }).fold(
+            String::new(),
+            |mut acc, e| {
                 acc.push(e);
                 acc
-            });
+            },
+        );
         write!(f, "TntShort {{ {tnt_str:?} }}")
     }
 }
@@ -53,11 +40,12 @@ impl IntoIterator for TntShort {
 
 impl IntoIterator for TntLong {
     type Item = bool;
-    type IntoIter = TntLongIter;
+    type IntoIter = TntIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        let mask = 1u64 << (63 - self.payload_as_u64().leading_zeros());
-        Self::IntoIter { tnt: self, mask }
+        let raw_wit_trailing = self.payload_as_u64_with_trailing();
+        let inner = raw_wit_trailing << raw_wit_trailing.leading_zeros() << 1;
+        Self::IntoIter { inner }
     }
 }
 
@@ -82,29 +70,17 @@ impl TntLong {
     pub(super) const SIZE: usize = 8;
     pub(super) const B1: u8 = 0xa3;
 
-    const fn payload_as_u64(&self) -> u64 {
+    const fn payload_as_u64_with_trailing(&self) -> u64 {
         u64::from_le_bytes([
+            0,
+            0x80,
             self.raw[0],
             self.raw[1],
             self.raw[2],
             self.raw[3],
             self.raw[4],
             self.raw[5],
-            0,
-            0,
         ])
-    }
-}
-
-impl SizedPtPacket for TntShort {
-    fn original_size(&self) -> usize {
-        Self::SIZE
-    }
-}
-
-impl SizedPtPacket for TntLong {
-    fn original_size(&self) -> usize {
-        Self::SIZE
     }
 }
 
@@ -126,12 +102,13 @@ impl Iterator for TntIter {
 
 impl TntIter {
     /// Check if the iterator has space for at least one more TntShort
-    pub fn can_push_tnt_short(&self) -> bool {
+    pub const fn can_push_tnt_short(&self) -> bool {
         // tnt short contains at most 6 tnt bits
         self.inner & 0x3f == 0
     }
 
-    /// SAFETY: the caller must make sure that can_push_tnt_short is true
+    /// SAFETY: the caller must make sure that the iterator has enough space, the last 6 bits of
+    /// self.inner must be zero.
     pub unsafe fn push(&mut self, tnt: TntShort) {
         let free = self.inner.trailing_zeros();
         // clear the trailing end flag
@@ -139,33 +116,6 @@ impl TntIter {
 
         // push the tnt content and the trailing
         self.inner |= (((tnt.raw | 0x01) << tnt.raw.leading_zeros() << 1) as u64) << (free - 7);
-    }
-}
-
-impl Iterator for TntShortIter {
-    type Item = bool;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.inner == 0x80 {
-            None
-        } else {
-            let res = (self.inner & 0x80) != 0;
-            self.inner <<= 1;
-            Some(res)
-        }
-    }
-}
-
-impl Iterator for TntLongIter {
-    type Item = bool;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.mask >>= 1;
-        if self.mask == 0 {
-            None
-        } else {
-            Some(self.tnt.payload_as_u64() & self.mask != 0)
-        }
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::PtDecoderError;
+use crate::packet::PtPacket;
 use crate::packet::psb::first_psb_position;
-use crate::packet::{PtPacket, SizedPtPacket};
 
 #[derive(Debug)]
 pub struct PtPacketDecoder<'a> {
@@ -27,23 +27,6 @@ impl<'a> PtPacketDecoder<'a> {
 
         Ok(p)
     }
-
-    // pub fn rollback_one_packet(&mut self, packet: PtPacket) -> Result<(), PtDecoderError> {
-    //     let mut pos = self.pos.checked_sub(packet.original_size()).ok_or(
-    //         PtDecoderError::InvalidPacketSequence {
-    //             packets: vec![packet.clone()],
-    //         },
-    //     )?;
-    //     let parsed = PtPacket::parse(self.buffer, &mut pos)?;
-    //     if parsed == packet {
-    //         self.pos -= packet.original_size();
-    //         Ok(())
-    //     } else {
-    //         Err(PtDecoderError::InvalidPacketSequence {
-    //             packets: vec![packet],
-    //         })
-    //     }
-    // }
 
     pub const fn pos(&self) -> usize {
         self.pos
