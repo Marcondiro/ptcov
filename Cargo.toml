@@ -3,7 +3,7 @@ name = "ptcov"
 version = "0.0.7"
 authors = ["Marco Cavenati <cavenatimarco+ptcov@gmail.com>"]
 edition = "2024"
-rust-version = "1.89.0"
+rust-version = "1.92.0"
 license = "MIT OR Apache-2.0"
 description = "Decoder to compute code coverage from Intel® Processor Trace traces"
 documentation = "https://docs.rs/ptcov"
@@ -54,4 +54,4 @@ log = { version = "0.4.29", optional = true }
 num-traits = "0.2.19"
 
 [dev-dependencies]
-env_logger = "0.11.8"
+env_logger = "0.11.9"
