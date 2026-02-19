@@ -1,14 +1,14 @@
 // todo better debug print
 #[derive(Debug, Clone, PartialEq)]
-pub struct PtImage {
-    data: Vec<u8>,
+pub struct PtImage<'a> {
+    data: &'a [u8],
     virtual_address: u64,
     cr3: Option<u64>,
     vmcs_ptr: Option<u64>,
 }
 
-impl PtImage {
-    pub const fn new(data: Vec<u8>, virtual_address: u64) -> Self {
+impl<'a> PtImage<'a> {
+    pub const fn new(data: &'a [u8], virtual_address: u64) -> Self {
         Self {
             data,
             virtual_address,
@@ -18,7 +18,7 @@ impl PtImage {
     }
 
     pub const fn data(&self) -> &[u8] {
-        self.data.as_slice()
+        self.data
     }
 
     pub const fn virtual_address_start(&self) -> u64 {

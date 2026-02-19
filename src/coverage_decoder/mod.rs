@@ -4,18 +4,19 @@ use crate::packet::decoder::PtPacketDecoder;
 use crate::packet::mode::{AddressingMode, ModeExec, ModeTsx, TransactionState};
 use crate::packet::pip::Pip;
 use crate::packet::tip::{Fup, Tip, TipPgd, TipPge};
+use crate::packet::tnt::TntIter;
 use crate::packet::vmcs::Vmcs;
 use crate::packet::{PtPacket, PtPacketParseError};
 use crate::utils::fmix64;
+use cache::*;
 use iced_x86::{Code, FlowControl, Instruction, Register};
-use num_traits::SaturatingAdd;
+use num_traits::{SaturatingAdd, WrappingAdd};
 use std::fmt::Debug;
 
 mod cache;
-use cache::*;
 
-pub trait CoverageEntry: Copy + Debug + From<u8> + SaturatingAdd {}
-impl<T> CoverageEntry for T where T: Copy + Debug + From<u8> + SaturatingAdd {}
+pub trait CoverageEntry: Copy + Debug + From<u8> + SaturatingAdd + WrappingAdd {}
+impl<T> CoverageEntry for T where T: Copy + Debug + From<u8> + SaturatingAdd + WrappingAdd {}
 
 #[derive(Debug, PartialEq)]
 #[non_exhaustive]
@@ -45,15 +46,15 @@ impl From<PtPacketParseError> for PtDecoderError {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct PtCoverageDecoderBuilder {
+pub struct PtCoverageDecoderBuilder<'a> {
     cpu: Option<PtCpu>, // todo: consider if caching the errata makes sense
-    images: Vec<PtImage>,
+    images: &'a [PtImage<'a>],
     filter_vmx_non_root: bool,
 }
 
 #[derive(Debug)]
-pub struct PtCoverageDecoder {
-    builder: PtCoverageDecoderBuilder,
+pub struct PtCoverageDecoder<'a> {
+    builder: PtCoverageDecoderBuilder<'a>,
 
     is_syncd: bool,
     state: ExecutionState,
@@ -110,11 +111,14 @@ where
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ProceedInstStopReason {
-    CondBranch { to: u64 },
+    CondBranch {
+        to: u64,
+    },
     FarIndirect,
     Indirect,
     MovCr3,
     Return,
+    #[cfg(feature = "more_checks")]
     UntilIpReached,
 }
 
@@ -186,11 +190,11 @@ impl ExecutionState {
     }
 }
 
-impl PtCoverageDecoderBuilder {
+impl<'a> PtCoverageDecoderBuilder<'a> {
     pub const fn new() -> Self {
         Self {
             cpu: None,
-            images: vec![],
+            images: &[],
             filter_vmx_non_root: false,
         }
     }
@@ -212,12 +216,12 @@ impl PtCoverageDecoderBuilder {
     }
 
     /// Exact runtime memory image of the executed target.
-    pub fn images(mut self, images: Vec<PtImage>) -> Self {
+    pub fn images(mut self, images: &'a [PtImage<'a>]) -> Self {
         self.images = images;
         self
     }
 
-    pub fn build(self) -> PtCoverageDecoder {
+    pub fn build(self) -> PtCoverageDecoder<'a> {
         PtCoverageDecoder {
             builder: self,
             state: ExecutionState::new(),
@@ -227,17 +231,14 @@ impl PtCoverageDecoderBuilder {
     }
 }
 
-impl Default for PtCoverageDecoderBuilder {
+impl<'a> Default for PtCoverageDecoderBuilder<'a> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl PtCoverageDecoder {
-    pub const fn builder() -> PtCoverageDecoderBuilder {
-        PtCoverageDecoderBuilder::new()
-    }
-
+impl PtCoverageDecoder<'_> {
+    /// `coverage` must have a len multiple of 2 and > 0.
     pub fn coverage<CE>(
         &mut self,
         pt_trace: &[u8],
@@ -246,6 +247,10 @@ impl PtCoverageDecoder {
     where
         CE: CoverageEntry,
     {
+        if coverage.is_empty() || !coverage.len().is_power_of_two() {
+            return Err(PtDecoderError::InvalidArgument);
+        }
+
         let mut iteration_state = CovDecIterationState::new(self, pt_trace, coverage)?;
 
         loop {
@@ -267,9 +272,6 @@ impl PtCoverageDecoder {
 
         match packet {
             PtPacket::Tnt(tnt_iter) => self.proceed_inst_tnt(tnt_iter, iteration_state)?,
-            PtPacket::TntLong(tnt_l) => {
-                self.proceed_inst_tnt(tnt_l.into_iter(), iteration_state)?
-            }
             PtPacket::Tip(tip) => self.proceed_inst_tip(tip, iteration_state)?,
             PtPacket::TipPge(tip_pge) => self.handle_tip_pge(tip_pge)?,
             PtPacket::TipPgd(tip_pgd) => self.handle_tip_pgd(tip_pgd)?,
@@ -290,6 +292,7 @@ impl PtCoverageDecoder {
         Ok(())
     }
 
+    #[cold]
     fn handle_ovf<CE: CoverageEntry>(
         &mut self,
         iteration_state: &mut CovDecIterationState<CE>,
@@ -361,14 +364,14 @@ impl PtCoverageDecoder {
             return Err(PtDecoderError::MalformedPacket);
         }
 
-        if cfg!(feature = "more_checks") {
-            match self.proceed_inst_until(Some(self.state.tip_last_ip))? {
-                ProceedInstStopReason::UntilIpReached => Ok(()),
-                _ => Err(PtDecoderError::IncoherentImage),
-            }
-        } else {
-            Ok(())
-        }
+        #[cfg(feature = "more_checks")]
+        return match self.proceed_inst_until(Some(self.state.tip_last_ip))? {
+            ProceedInstStopReason::UntilIpReached => Ok(()),
+            _ => Err(PtDecoderError::IncoherentImage),
+        };
+
+        #[cfg_attr(feature = "more_checks", expect(unreachable_code))]
+        Ok(())
     }
 
     fn handle_mode_exec<CE: CoverageEntry>(
@@ -412,6 +415,7 @@ impl PtCoverageDecoder {
                 CondBranch { .. } | Indirect | Return => {
                     return Err(PtDecoderError::IncoherentImage);
                 }
+                #[cfg(feature = "more_checks")]
                 UntilIpReached => unreachable!("until parameter is set to None"),
             }
         }
@@ -468,14 +472,14 @@ impl PtCoverageDecoder {
         use ProceedInstStopReason::*;
 
         let ret = if tip_pgd.ip(&mut self.state.tip_last_ip) {
-            if cfg!(feature = "more_checks") {
-                match self.proceed_inst_until(Some(self.state.tip_last_ip))? {
-                    CondBranch { .. } | Indirect | FarIndirect | UntilIpReached | Return => Ok(()),
-                    MovCr3 => Err(PtDecoderError::IncoherentImage),
-                }
-            } else {
-                Ok(())
-            }
+            #[cfg(feature = "more_checks")]
+            return match self.proceed_inst_until(Some(self.state.tip_last_ip))? {
+                CondBranch { .. } | Indirect | FarIndirect | UntilIpReached | Return => Ok(()),
+                MovCr3 => Err(PtDecoderError::IncoherentImage),
+            };
+
+            #[cfg_attr(feature = "more_checks", expect(unreachable_code))]
+            Ok(())
         } else {
             // might be caused by:
             // - trace stopped manually or operational error probably there is no way to get the
@@ -487,6 +491,7 @@ impl PtCoverageDecoder {
             if let Ok(stop_reason) = self.proceed_inst_until(None) {
                 match stop_reason {
                     CondBranch { .. } | Indirect | FarIndirect | MovCr3 | Return => Ok(()),
+                    #[cfg(feature = "more_checks")]
                     UntilIpReached => unreachable!("until parameter is set to None"),
                 }
             } else {
@@ -526,15 +531,16 @@ impl PtCoverageDecoder {
                 }
             }
             CondBranch { .. } | MovCr3 => Err(PtDecoderError::IncoherentImage),
+            #[cfg(feature = "more_checks")]
             UntilIpReached => unreachable!("until parameter is set to None"),
         }
     }
 
     /// Proceed decoding the instructions until next decision point, considering the current PT
     /// packet is a TNT
-    fn proceed_inst_tnt<CE: CoverageEntry, TI: Iterator<Item = bool>>(
+    fn proceed_inst_tnt<CE: CoverageEntry>(
         &mut self,
-        tnt_iter: TI,
+        tnt_iter: TntIter,
         iteration_state: &mut CovDecIterationState<CE>,
     ) -> Result<(), PtDecoderError> {
         use ProceedInstStopReason::*;
@@ -599,6 +605,7 @@ impl PtCoverageDecoder {
                         };
                     }
                     MovCr3 => return Err(PtDecoderError::IncoherentImage),
+                    #[cfg(feature = "more_checks")]
                     UntilIpReached => unreachable!("until parameter is set to None"),
                 }
             }
@@ -645,21 +652,25 @@ impl PtCoverageDecoder {
             self.state.ip = cache_entry.to;
             Ok(cache_entry.stop_reason)
         } else {
-            self.proceed_inst_until_slow_path(until)
+            #[cfg(feature = "more_checks")]
+            return self.proceed_inst_until_slow_path(until);
+            #[cfg(not(feature = "more_checks"))]
+            return self.proceed_inst_until_slow_path();
         }
     }
 
     fn proceed_inst_until_slow_path(
         &mut self,
-        until: Option<u64>,
+        #[cfg(feature = "more_checks")] until: Option<u64>,
     ) -> Result<ProceedInstStopReason, PtDecoderError> {
         use ProceedInstStopReason::*;
 
         #[cfg(feature = "retc")]
         let from_retc_stack_size = self.state.ret_comp_stack.len();
         let from = self.state.ip;
-        let mut inst_decoder = self.state.new_inst_decoder(&self.builder.images)?;
+        let mut inst_decoder = self.state.new_inst_decoder(self.builder.images)?;
         let ins = loop {
+            #[cfg(feature = "more_checks")]
             if let Some(ip) = until
                 && inst_decoder.ip() == ip
             {
@@ -669,7 +680,7 @@ impl PtCoverageDecoder {
             if !inst_decoder.can_decode() {
                 inst_decoder = self
                     .state
-                    .reposition_inst_decoder(inst_decoder, &self.builder.images)?;
+                    .reposition_inst_decoder(inst_decoder, self.builder.images)?;
             }
 
             let ins = inst_decoder.decode();
@@ -719,7 +730,7 @@ impl PtCoverageDecoder {
             self.state.ip = ins.near_branch_target();
             inst_decoder = self
                 .state
-                .reposition_inst_decoder(inst_decoder, &self.builder.images)?;
+                .reposition_inst_decoder(inst_decoder, self.builder.images)?;
         };
 
         let reason = match InstructionClass::from(&ins) {
@@ -771,17 +782,16 @@ impl PtCoverageDecoder {
         to_ip: u64,
         iteration_state: &mut CovDecIterationState<CE>,
     ) {
-        if self.state.save_coverage {
-            let cov_entry = coverage_entry(self.state.ip, to_ip, iteration_state.coverage.len());
-            iteration_state.coverage[cov_entry] =
-                iteration_state.coverage[cov_entry].saturating_add(&1.into());
-        }
+        let cov_entry = coverage_entry(self.state.ip, to_ip, iteration_state.coverage.len());
+        iteration_state.coverage[cov_entry] = iteration_state.coverage[cov_entry]
+            .saturating_add(&(self.state.save_coverage as u8).into());
     }
 }
 
 #[inline]
 const fn coverage_entry(from: u64, to: u64, map_len: usize) -> usize {
-    (fmix64(from) ^ fmix64(to)) as usize % map_len
+    let combined = from ^ to.wrapping_shl(32);
+    fmix64(combined) as usize & (map_len - 1)
 }
 
 fn decode_psbplus<CE: Debug>(
