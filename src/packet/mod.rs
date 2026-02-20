@@ -145,7 +145,7 @@ impl PtPacket {
         // consume padding
         loop {
             if *b != Pad::B0 {
-                break b;
+                break;
             }
             *pos += Pad::SIZE;
             b = input.get(*pos).ok_or(PtPacketParseError::Eof)?;

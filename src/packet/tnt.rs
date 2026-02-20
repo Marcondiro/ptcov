@@ -33,7 +33,8 @@ impl IntoIterator for TntShort {
     type IntoIter = TntIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        let inner = (((self.raw | 0x01) << self.raw.leading_zeros() << 1) as u64) << (64 - 8);
+        let raw64 = self.raw as u64;
+        let inner = (raw64 | 1) << raw64.leading_zeros() << 1;
         Self::IntoIter { inner }
     }
 }
@@ -89,14 +90,10 @@ impl Iterator for TntIter {
 
     fn next(&mut self) -> Option<Self::Item> {
         const MASK: u64 = 1 << 63;
+        let res = (self.inner & MASK) != 0;
+        self.inner <<= 1;
 
-        if self.inner == MASK {
-            None
-        } else {
-            let res = (self.inner & MASK) != 0;
-            self.inner <<= 1;
-            Some(res)
-        }
+        if self.inner != 0 { Some(res) } else { None }
     }
 }
 
@@ -111,11 +108,13 @@ impl TntIter {
     /// self.inner must be zero.
     pub unsafe fn push(&mut self, tnt: TntShort) {
         let free = self.inner.trailing_zeros();
-        // clear the trailing end flag
-        self.inner &= !1 << free;
 
+        // clear the trailing end flag
+        self.inner &= self.inner - 1;
+
+        let tnt64 = tnt.raw as u64;
         // push the tnt content and the trailing
-        self.inner |= (((tnt.raw | 0x01) << tnt.raw.leading_zeros() << 1) as u64) << (free - 7);
+        self.inner |= ((tnt64 | 1) << tnt64.leading_zeros() << 1).rotate_right(63 - free);
     }
 }
 
@@ -130,13 +129,15 @@ mod tests {
         let p2 = p.clone();
         let mut iter = p.into_iter();
 
+        let right = vec![true, false].repeat(2);
+        assert_eq!(iter.clone().collect::<Vec<_>>(), right);
+
         assert!(iter.can_push_tnt_short());
         unsafe {
             iter.push(p2);
         }
 
         let right = vec![true, false].repeat(2).repeat(2);
-
         assert_eq!(iter.collect::<Vec<_>>(), right);
     }
 
