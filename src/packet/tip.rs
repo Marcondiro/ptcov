@@ -11,7 +11,7 @@ pub type TipPge = Tip;
 pub type TipPgd = Tip;
 pub type Fup = Tip;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 #[non_exhaustive]
 pub enum IpBytes {
@@ -58,32 +58,41 @@ impl Tip {
     }
 
     pub(super) fn try_from_payload(b0: &u8, rest: &[u8]) -> Result<Self, PtPacketParseError> {
-        Ok(match (b0 & Tip::IPBYTES_MASK, rest) {
-            (IpBytes::NONE, [..]) => Self {
-                ip_bytes: IpBytes::None,
-                target_ip: 0,
-            },
-            (IpBytes::C16, [b1, b2, ..]) => Self {
-                ip_bytes: IpBytes::_16,
-                target_ip: u16::from_le_bytes([*b1, *b2]) as u64,
-            },
-            (IpBytes::C32, [b1, b2, b3, b4, ..]) => Self {
-                ip_bytes: IpBytes::_32,
-                target_ip: u32::from_le_bytes([*b1, *b2, *b3, *b4]) as u64,
-            },
-            (IpBytes::C48, [b1, b2, b3, b4, b5, b6, ..]) => Self {
-                ip_bytes: IpBytes::_48,
-                target_ip: u64::from_le_bytes([*b1, *b2, *b3, *b4, *b5, *b6, 0, 0]),
-            },
-            (IpBytes::SIGN_EXTEND48, [b1, b2, b3, b4, b5, b6, ..]) => Self {
-                ip_bytes: IpBytes::SignExtend48,
-                target_ip: u64::from_le_bytes([*b1, *b2, *b3, *b4, *b5, *b6, 0, 0]),
-            },
-            (IpBytes::C64, [b1, b2, b3, b4, b5, b6, b7, b8, ..]) => Self {
-                ip_bytes: IpBytes::_64,
-                target_ip: u64::from_le_bytes([*b1, *b2, *b3, *b4, *b5, *b6, *b7, *b8]),
-            },
-            _ => return Err(PtPacketParseError::MalformedPacket),
+        let ip_bytes = IpBytes::try_from(b0 & Tip::IPBYTES_MASK)
+            .map_err(|_| PtPacketParseError::MalformedPacket)?;
+        if rest.len() < 8 {
+            Self::try_from_payload_slow_path(ip_bytes, rest)
+        } else {
+            let target_ip = u64::from_le_bytes(rest[..8].try_into().unwrap());
+
+            Ok(Self {
+                ip_bytes,
+                target_ip,
+            })
+        }
+    }
+
+    #[cold]
+    fn try_from_payload_slow_path(
+        ip_bytes: IpBytes,
+        rest: &[u8],
+    ) -> Result<Self, PtPacketParseError> {
+        let payload_len = ip_bytes.original_size() - 1;
+        if rest.len() < payload_len {
+            return Err(PtPacketParseError::MalformedPacket);
+        }
+
+        let mut target_ip_bytes = [0; 8];
+        target_ip_bytes[..payload_len].copy_from_slice(&rest[..payload_len]);
+        let mut target_ip = u64::from_le_bytes(target_ip_bytes);
+
+        if ip_bytes == IpBytes::SignExtend48 {
+            target_ip = sign_extend_48(target_ip);
+        }
+
+        Ok(Self {
+            ip_bytes,
+            target_ip,
         })
     }
 }
