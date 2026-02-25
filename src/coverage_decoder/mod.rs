@@ -66,6 +66,8 @@ struct ExecutionState {
     packet_en: bool,
     pip: Pip,
     tip_last_ip: u64,
+    // todo: remove, just for comparison with libxdc
+    last_ins_len: u64,
     ip: u64,
     vmcs: Option<Vmcs>,
     mode_exec: ModeExec,
@@ -128,6 +130,7 @@ impl ExecutionState {
             packet_en: false,
             pip: Pip { raw: [0; 6] },
             tip_last_ip: 0, // SDM 34.4.2.2 “Last IP” is initialized to zero
+            last_ins_len: 0,
             ip: 0,
             vmcs: None,
             mode_exec: ModeExec::new(AddressingMode::_16, false),
@@ -355,6 +358,7 @@ impl PtCoverageDecoder<'_> {
             Err(PtDecoderError::MalformedPacket)
         } else {
             self.state.ip = self.state.tip_last_ip;
+            self.state.last_ins_len = 0;
             Ok(())
         }
     }
@@ -452,6 +456,7 @@ impl PtCoverageDecoder<'_> {
     fn handle_async_tip(&mut self, tip: Tip) -> Result<(), PtDecoderError> {
         if tip.ip(&mut self.state.tip_last_ip) {
             self.state.ip = self.state.tip_last_ip;
+            self.state.last_ins_len = 0;
             Ok(())
         } else {
             // we jumped somewhere but who knows where?
@@ -465,6 +470,7 @@ impl PtCoverageDecoder<'_> {
         self.state.packet_en = false;
         if tip_pgd.ip(&mut self.state.tip_last_ip) {
             self.state.ip = self.state.tip_last_ip;
+            self.state.last_ins_len = 0;
         }
     }
 
@@ -507,6 +513,7 @@ impl PtCoverageDecoder<'_> {
         if tip_pge.ip(&mut self.state.tip_last_ip) {
             self.state.packet_en = true;
             self.state.ip = self.state.tip_last_ip;
+            self.state.last_ins_len = 0;
             Ok(())
         } else {
             Err(PtDecoderError::MalformedPacket)
@@ -555,9 +562,11 @@ impl PtCoverageDecoder<'_> {
                         if tnt {
                             self.add_coverage_entry(to, iteration_state);
                             self.state.ip = to;
+                            self.state.last_ins_len = 0;
                             #[cfg(feature = "log_packets")]
                             log::trace!("TNT taken to 0x{:x}", self.state.ip);
                         } else {
+                            self.add_coverage_entry(self.state.ip, iteration_state);
                             #[cfg(feature = "log_packets")]
                             log::trace!("TNT not taken");
                         }
@@ -600,6 +609,7 @@ impl PtCoverageDecoder<'_> {
                         if tip.ip(&mut self.state.tip_last_ip) {
                             self.add_coverage_entry(self.state.tip_last_ip, iteration_state);
                             self.state.ip = self.state.tip_last_ip;
+                            self.state.last_ins_len = 0;
                         } else {
                             return Err(PtDecoderError::MalformedPacket);
                         };
@@ -650,6 +660,7 @@ impl PtCoverageDecoder<'_> {
                 cache_entry.to
             );
             self.state.ip = cache_entry.to;
+            self.state.last_ins_len = cache_entry.last_ins_len;
             Ok(cache_entry.stop_reason)
         } else {
             #[cfg(feature = "more_checks")]
@@ -715,6 +726,7 @@ impl PtCoverageDecoder<'_> {
                 | InstructionClass::FarReturn
                 | InstructionClass::Return => {
                     self.state.ip = inst_decoder.ip();
+                    self.state.last_ins_len = ins.len() as u64;
                     break ins;
                 }
                 // Reposition instruction decoder before continuing
@@ -728,6 +740,7 @@ impl PtCoverageDecoder<'_> {
                 InstructionClass::JumpDirect | InstructionClass::CallDirect => {}
             }
             self.state.ip = ins.near_branch_target();
+            self.state.last_ins_len = ins.len() as u64;
             inst_decoder = self
                 .state
                 .reposition_inst_decoder(inst_decoder, self.builder.images)?;
@@ -765,6 +778,7 @@ impl PtCoverageDecoder<'_> {
                 // vmcs: self.state.vmcs,
             },
             InstCacheValue {
+                last_ins_len: ins.len() as u64,
                 to: self.state.ip,
                 stop_reason: reason,
                 #[cfg(feature = "retc")]
@@ -782,16 +796,18 @@ impl PtCoverageDecoder<'_> {
         to_ip: u64,
         iteration_state: &mut CovDecIterationState<CE>,
     ) {
-        let cov_entry = coverage_entry(self.state.ip, to_ip, iteration_state.coverage.len());
+        let cov_entry = coverage_entry(self.state.ip - self.state.last_ins_len, to_ip, iteration_state.coverage.len());
         iteration_state.coverage[cov_entry] = iteration_state.coverage[cov_entry]
             .saturating_add(&(self.state.save_coverage as u8).into());
+        println!("\toffset=0x{:06x} value={:?}", cov_entry, iteration_state.coverage[cov_entry]);
     }
 }
 
 #[inline]
-const fn coverage_entry(from: u64, to: u64, map_len: usize) -> usize {
-    let combined = from ^ to.wrapping_shl(32);
-    fmix64(combined) as usize & (map_len - 1)
+fn coverage_entry(from: u64, to: u64, map_len: usize) -> usize {
+    println!("from=0x{:016x} to=0x{:016x}", from, to);
+    //(fmix64(to) ^ (fmix64(from) >> 1)) as usize & (map_len - 1)
+    (((from & 0xff) << 8) | (to & 0xff)) as usize
 }
 
 fn decode_psbplus<CE: Debug>(

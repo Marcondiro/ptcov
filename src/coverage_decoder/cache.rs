@@ -55,6 +55,8 @@ pub struct InstCacheKey {
 
 #[derive(Debug)]
 pub struct InstCacheValue {
+    // todo just for comparison with libxdc
+    pub last_ins_len: u64,
     pub to: u64,
     pub stop_reason: ProceedInstStopReason,
     #[cfg(feature = "retc")]
