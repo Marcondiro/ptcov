@@ -523,6 +523,7 @@ impl PtCoverageDecoder<'_> {
         match self.proceed_inst_until(None)? {
             Indirect | FarIndirect | Return => {
                 if tip.ip(&mut self.state.tip_last_ip) {
+                    #[cfg(feature = "indirect_edges")]
                     self.add_coverage_entry(self.state.tip_last_ip, iteration_state);
                     self.state.ip = self.state.tip_last_ip;
                     Ok(())
@@ -598,6 +599,7 @@ impl PtCoverageDecoder<'_> {
                         };
 
                         if tip.ip(&mut self.state.tip_last_ip) {
+                            #[cfg(feature = "indirect_edges")]
                             self.add_coverage_entry(self.state.tip_last_ip, iteration_state);
                             self.state.ip = self.state.tip_last_ip;
                         } else {
@@ -790,7 +792,7 @@ impl PtCoverageDecoder<'_> {
 
 #[inline]
 const fn coverage_entry(from: u64, to: u64, map_len: usize) -> usize {
-    let combined = from ^ to.wrapping_shl(32);
+    let combined = from ^ to.wrapping_shl(31);
     fmix64(combined) as usize & (map_len - 1)
 }
 

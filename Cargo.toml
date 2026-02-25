@@ -12,7 +12,7 @@ repository = "https://github.com/Marcondiro/ptcov"
 keywords = ["decoder", "intel", "pt"]
 
 [features]
-default = ["retc", "more_checks", "stronger_hash"]
+default = ["retc", "more_checks", "stronger_hash", "indirect_edges"]
 # Support for IA32_RTIT_CTL.CYCEn dependent packets
 cyc = []
 # Support for IA32_RTIT_CTL.IA32_RTIT_CTL.EventEn dependent packets
@@ -36,6 +36,8 @@ tsc = []
 more_checks = []
 # Use a stronger hasher when filling the coverage map
 stronger_hash = []
+# Track edges originating from indirect jumps/calls/ret into the coverage map
+indirect_edges = []
 
 log = ["log_packets", "log_instructions"]
 log_packets = ["dep:log"]
