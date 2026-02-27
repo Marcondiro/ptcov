@@ -587,24 +587,7 @@ impl PtCoverageDecoder<'_> {
                     // and continue in the loop without consuming the TNT
                     #[cfg_attr(feature = "retc", expect(unreachable_patterns))]
                     Indirect | FarIndirect | Return => {
-                        #[cfg(feature = "log_packets")]
-                        log::trace!("TNT Handling deferred TIP");
-                        let deferred = iteration_state.packet_decoder.next_packet()?;
-                        let tip = if let PtPacket::Tip(tip) = deferred {
-                            tip
-                        } else {
-                            return Err(PtDecoderError::InvalidPacketSequence {
-                                packets: vec![deferred],
-                            }); // todo add tnt here to the sequence
-                        };
-
-                        if tip.ip(&mut self.state.tip_last_ip) {
-                            #[cfg(feature = "indirect_edges")]
-                            self.add_coverage_entry(self.state.tip_last_ip, iteration_state);
-                            self.state.ip = self.state.tip_last_ip;
-                        } else {
-                            return Err(PtDecoderError::MalformedPacket);
-                        };
+                        self.handle_tnt_deferred_tip(iteration_state)?;
                     }
                     MovCr3 => return Err(PtDecoderError::IncoherentImage),
                     #[cfg(feature = "more_checks")]
@@ -779,6 +762,33 @@ impl PtCoverageDecoder<'_> {
         Ok(reason)
     }
 
+    #[cold]
+    fn handle_tnt_deferred_tip<CE: CoverageEntry>(
+        &mut self,
+        iteration_state: &mut CovDecIterationState<CE>,
+    ) -> Result<(), PtDecoderError> {
+        #[cfg(feature = "log_packets")]
+        log::trace!("TNT Handling deferred TIP");
+        let deferred = iteration_state.packet_decoder.next_packet()?;
+        let tip = if let PtPacket::Tip(tip) = deferred {
+            tip
+        } else {
+            return Err(PtDecoderError::InvalidPacketSequence {
+                packets: vec![deferred],
+            }); // todo add tnt here to the sequence
+        };
+
+        if tip.ip(&mut self.state.tip_last_ip) {
+            #[cfg(feature = "indirect_edges")]
+            self.add_coverage_entry(self.state.tip_last_ip, iteration_state);
+            self.state.ip = self.state.tip_last_ip;
+            Ok(())
+        } else {
+            Err(PtDecoderError::MalformedPacket)
+        }
+    }
+
+    #[inline]
     fn add_coverage_entry<CE: CoverageEntry>(
         &mut self,
         to_ip: u64,

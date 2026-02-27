@@ -158,13 +158,15 @@ impl PtPacket {
             *pos += TntShort::SIZE;
             let mut tnt_iter = TntShort { raw: *b }.into_iter();
 
-            while tnt_iter.can_push_tnt_short() {
-                match input.get(*pos) {
-                    Some(b) if (b & 0x01 == 0) && (*b >= 0x04) => {
-                        unsafe { tnt_iter.push(TntShort { raw: *b }) }
-                        *pos += TntShort::SIZE;
+            while let Some(b) = input.get(*pos) {
+                if (b & 0x01 == 0) && (*b >= 0x04) {
+                    unsafe { tnt_iter.push(TntShort { raw: *b }) }
+                    *pos += TntShort::SIZE;
+                    if !tnt_iter.can_push_tnt_short() {
+                        break;
                     }
-                    _ => break,
+                } else {
+                    break;
                 }
             }
 
@@ -188,17 +190,7 @@ impl PtPacket {
                     // terminator) at bit 2 or higher. Therefore, tnt.8 packets raw value is
                     // always >= 4. This check eliminates any ambiguity with other packet types.
                     *pos += TntShort::SIZE;
-                    let mut tnt_iter = TntShort { raw: *b0 }.into_iter();
-                    while tnt_iter.can_push_tnt_short() {
-                        match input.get(*pos) {
-                            Some(b) if (b & 0x01 == 0) && (*b >= 0x04) => {
-                                unsafe { tnt_iter.push(TntShort { raw: *b }) }
-                                *pos += TntShort::SIZE;
-                            }
-                            _ => break,
-                        }
-                    }
-                    Self::Tnt(tnt_iter)
+                    Self::Tnt(TntShort { raw: *b0 }.into_iter())
                 }
                 #[cfg(feature = "cyc")]
                 [b0, ..] if b0 & 0x03 == 0x03 => {
