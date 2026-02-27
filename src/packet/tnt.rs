@@ -106,6 +106,7 @@ impl TntIter {
 
     /// SAFETY: the caller must make sure that the iterator has enough space, the last 6 bits of
     /// self.inner must be zero.
+    #[inline(always)]
     pub unsafe fn push(&mut self, tnt: TntShort) {
         let free = self.inner.trailing_zeros();
 
