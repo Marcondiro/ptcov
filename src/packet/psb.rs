@@ -1,9 +1,9 @@
 use crate::packet::SizedPtPacket;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Psb {}
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct PsbEnd {}
 
 impl PsbEnd {

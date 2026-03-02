@@ -94,8 +94,8 @@ pub enum PtPacket {
     /// Overflow (OVF) Packet
     Ovf(Ovf),
     /// Packet Stream Boundary (PSB) Packet
-    Psb(Psb),
-    PsbEnd(PsbEnd),
+    Psb(),
+    PsbEnd(),
     // /// Maintenance (MNT) Packet
     // Mnt(Mnt),
     // /// PTWRITE (PTW) Packet
@@ -228,7 +228,7 @@ impl PtPacket {
                 }
                 [0x02, PsbEnd::B1, ..] => {
                     *pos += PsbEnd::SIZE;
-                    Self::PsbEnd(PsbEnd {})
+                    Self::PsbEnd()
                 }
                 [0x02, Ovf::B1, ..] => {
                     *pos += Ovf::SIZE;
@@ -240,7 +240,7 @@ impl PtPacket {
                 }
                 [0x02, Psb::B1, ..] => {
                     *pos += Psb::SIZE;
-                    Self::Psb(Psb {})
+                    Self::Psb()
                 }
                 [0x02, Cbr::B1, _, _, ..] => {
                     // ignore CBRs

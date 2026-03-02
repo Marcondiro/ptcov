@@ -5,12 +5,12 @@ pub struct TntShort {
     pub(super) raw: u8,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TntLong {
     pub(super) raw: [u8; 6],
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TntIter {
     inner: u64,
 }
@@ -89,8 +89,7 @@ impl Iterator for TntIter {
     type Item = bool;
 
     fn next(&mut self) -> Option<Self::Item> {
-        const MASK: u64 = 1 << 63;
-        let res = (self.inner & MASK) != 0;
+        let res = (self.inner >> 63) != 0;
         self.inner <<= 1;
 
         if self.inner != 0 { Some(res) } else { None }

@@ -19,8 +19,17 @@ impl<'a> PtPacketDecoder<'a> {
     }
 
     #[inline]
-    pub fn next_packet(&mut self) -> Result<PtPacket, PtDecoderError> {
+    pub fn next_packet_likely_tnt(&mut self) -> Result<PtPacket, PtDecoderError> {
         let p = PtPacket::parse(self.buffer, &mut self.pos)?;
+
+        #[cfg(feature = "log_packets")]
+        log::trace!("{:016x} PT packet: {p:x?}", self.pos);
+
+        Ok(p)
+    }
+
+    pub fn next_packet(&mut self) -> Result<PtPacket, PtDecoderError> {
+        let p = PtPacket::parse_slow_path(self.buffer, &mut self.pos)?;
 
         #[cfg(feature = "log_packets")]
         log::trace!("{:016x} PT packet: {p:x?}", self.pos);
@@ -54,7 +63,6 @@ mod tests {
     use crate::packet::PtPacket;
     use crate::packet::decoder::PtPacketDecoder;
     use crate::packet::mode::{AddressingMode, ModeExec};
-    use crate::packet::psb::{Psb, PsbEnd};
     use crate::packet::tip::{Tip, TipPgd, TipPge};
     use crate::packet::tnt::TntShort;
     use std::iter::zip;
@@ -98,8 +106,8 @@ mod tests {
 
     fn right() -> Box<[PtPacket]> {
         Box::new([
-            PtPacket::Psb(Psb {}),
-            PtPacket::PsbEnd(PsbEnd {}),
+            PtPacket::Psb(),
+            PtPacket::PsbEnd(),
             PtPacket::ModeExec(ModeExec::new(AddressingMode::_64, false)),
             PtPacket::TipPge(TipPge::try_from_payload(&TRACE[0x1f], &TRACE[0x20..]).unwrap()),
             PtPacket::Tnt(TntShort::new(&[false, false]).into_iter()),
