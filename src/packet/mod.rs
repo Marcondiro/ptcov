@@ -67,8 +67,11 @@ pub enum PtPacket {
     Fup(Fup),
     /// Paging Information (PIP) Packet
     Pip(Pip),
+    /// Mode.Exec (MODE) Packet
     ModeExec(ModeExec),
+    /// Mode.TSX (MODE) Packet
     ModeTsx(ModeTsx),
+    /// Trace Stop (TRACESTOP) Packet
     TraceStop(TraceStop),
     /// VMCS Packet
     Vmcs(Vmcs),
@@ -76,12 +79,16 @@ pub enum PtPacket {
     Ovf(Ovf),
     /// Packet Stream Boundary (PSB) Packet
     Psb(),
+    /// PSB End (PSBEND) Packet, terminating a PSB+ block
     PsbEnd(),
 }
 
+/// Errors returned when parsing PT packets.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PtPacketParseError {
+    /// Unexpected end of buffer.
     Eof,
+    /// Packet bytes do not form a valid PT packet.
     MalformedPacket,
 }
 

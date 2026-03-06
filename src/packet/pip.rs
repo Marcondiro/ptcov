@@ -1,3 +1,4 @@
+/// Paging Information (PIP) packet.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Pip {
     pub(crate) raw: [u8; 6],
@@ -13,6 +14,7 @@ impl Pip {
     //     u64::from_le_bytes(extended) << 5
     // }
 
+    /// Returns `true` if the trace is in VMX non-root operation (guest mode).
     pub const fn non_root_vmx(&self) -> bool {
         self.raw[0] & 0x01 != 0
     }

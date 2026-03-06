@@ -1,15 +1,20 @@
 use std::fmt::{Debug, Formatter};
 
+/// Short TNT packet (1 byte), carrying up to 6 taken/not-taken decisions.
 #[derive(Clone, Copy, PartialEq)]
 pub struct TntShort {
     pub(super) raw: u8,
 }
 
+/// Long TNT packet (8 bytes), carrying up to 47 taken/not-taken decisions.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TntLong {
     pub(super) raw: [u8; 6],
 }
 
+/// Iterator over taken/not-taken decisions from a TNT packet.
+///
+/// `true` means taken, `false` means not taken.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TntIter {
     inner: u64,
@@ -124,14 +129,17 @@ impl TntIter {
         self.inner |= ((tnt64 | 1) << tnt64.leading_zeros() << 1) >> (63 - free);
     }
 
+    /// Returns the number of remaining taken/not-taken decisions.
     pub const fn len(&self) -> u32 {
         63u32.saturating_sub(self.inner.trailing_zeros())
     }
 
+    /// Returns `true` if there are remaining decisions.
     pub const fn has_next(&self) -> bool {
         self.inner.trailing_zeros() < 63
     }
 
+    /// Returns the next decision without consuming it.
     pub const fn peek(&self) -> Option<bool> {
         let res = (self.inner >> 63) != 0;
         if (self.inner << 1) != 0 { Some(res) } else { None }

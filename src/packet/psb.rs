@@ -1,6 +1,8 @@
+/// Packet Stream Boundary (PSB) packet.
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Psb {}
 
+/// PSB End (PSBEND) packet, terminating a PSB+ block.
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct PsbEnd {}
 

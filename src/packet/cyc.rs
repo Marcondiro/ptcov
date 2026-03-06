@@ -1,5 +1,6 @@
 use crate::packet::PtPacketParseError;
 
+/// Cycle Count (CYC) packet.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Cyc {
     raw: [u8; 15], // according to Intel's libipt max len 15, SDM says: "The size of the counter is implementation specific"
@@ -7,6 +8,7 @@ pub struct Cyc {
 }
 
 impl Cyc {
+    /// Returns the encoded packet size in bytes.
     pub const fn original_size(&self) -> usize {
         self.len
     }

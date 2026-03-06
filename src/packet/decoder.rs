@@ -2,6 +2,7 @@ use crate::PtDecoderError;
 use crate::packet::PtPacket;
 use crate::packet::psb::first_psb_position;
 
+/// Low-level Intel PT packet decoder backed by a byte slice.
 #[derive(Debug)]
 pub struct PtPacketDecoder<'a> {
     buffer: &'a [u8],
@@ -9,15 +10,18 @@ pub struct PtPacketDecoder<'a> {
 }
 
 impl<'a> PtPacketDecoder<'a> {
+    /// Creates a decoder that starts parsing from the beginning of `buffer` without PSB sync.
     pub const fn new_not_syncd(buffer: &'a [u8]) -> Self {
         Self { buffer, pos: 0 }
     }
 
+    /// Creates a decoder and synchronizes to the first PSB in `buffer`.
     pub fn new(buffer: &'a [u8]) -> Result<Self, PtDecoderError> {
         let sync = first_psb_position(buffer).ok_or(PtDecoderError::SyncFailed)?;
         Ok(Self { buffer, pos: sync })
     }
 
+    /// Parses the next packet, optimized for the common case of a TNT packet.
     #[inline]
     pub fn next_packet_likely_tnt(&mut self) -> Result<PtPacket, PtDecoderError> {
         let p = PtPacket::parse(self.buffer, &mut self.pos)?;
@@ -28,6 +32,7 @@ impl<'a> PtPacketDecoder<'a> {
         Ok(p)
     }
 
+    /// Parses the next packet.
     pub fn next_packet(&mut self) -> Result<PtPacket, PtDecoderError> {
         let p = PtPacket::parse_slow_path(self.buffer, &mut self.pos)?;
 
@@ -37,10 +42,12 @@ impl<'a> PtPacketDecoder<'a> {
         Ok(p)
     }
 
+    /// Returns the current byte position in the buffer.
     pub const fn pos(&self) -> usize {
         self.pos
     }
 
+    /// Sets the current byte position in the buffer.
     pub const fn set_pos(&mut self, pos: usize) {
         self.pos = pos
     }
