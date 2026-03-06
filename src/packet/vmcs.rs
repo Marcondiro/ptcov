@@ -1,15 +1,7 @@
-use crate::packet::SizedPtPacket;
-
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
 #[repr(transparent)]
 pub struct Vmcs {
     pub(super) raw: [u8; 5],
-}
-
-impl SizedPtPacket for Vmcs {
-    fn original_size(&self) -> usize {
-        Self::SIZE
-    }
 }
 
 impl Vmcs {

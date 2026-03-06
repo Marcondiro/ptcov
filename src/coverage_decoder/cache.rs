@@ -1,56 +1,8 @@
-use super::ProceedInstStopReason;
+use super::{CoverageIndex, ProceedInstStopReason};
+use crate::packet::tnt::TntIter;
 
-pub type Cache = LinearCache<0x10_000, InstCacheKey, InstCacheValue>;
-
-#[derive(Debug)]
-pub struct LinearCache<const SIZE: usize, K, V>
-where
-    K: Copy + From<u64> + PartialEq,
-{
-    inner: Box<[(K, V); SIZE]>,
-}
-
-impl<const SIZE: usize, K, V> LinearCache<SIZE, K, V>
-where
-    K: Copy + From<u64> + PartialEq,
-    u64: From<K>,
-{
-    const MASK: usize = SIZE - 1;
-    // todo: assert SIZE is pow of 2
-
-    pub fn new() -> Self {
-        let inner = unsafe {
-            let mut inner_uninit = Box::<[(K, V); SIZE]>::new_zeroed();
-            // The 1 makes sure that the entry won't match any key and the cache will act as empty
-            inner_uninit.assume_init_mut()[0].0 = K::from(1);
-            inner_uninit.assume_init()
-        };
-
-        Self { inner }
-    }
-
-    #[inline]
-    pub fn get(&self, key: K) -> Option<&V> {
-        let entry = &self.inner[u64::from(key) as usize & Self::MASK];
-        if entry.0 == key { Some(&entry.1) } else { None }
-    }
-
-    pub fn insert(&mut self, key: K, value: V) {
-        let entry = &mut self.inner[u64::from(key) as usize & Self::MASK];
-        entry.0 = key;
-        entry.1 = value;
-    }
-}
-
-impl<const SIZE: usize, K, V> Default for LinearCache<SIZE, K, V>
-where
-    K: Copy + From<u64> + PartialEq,
-    u64: From<K>,
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
+pub type InstCache = hashbrown::HashMap<InstCacheKey, InstCacheValue>;
+pub type TntCache = hashbrown::HashMap<TntCacheKey, TntCacheValue>;
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub struct InstCacheKey {
@@ -59,24 +11,79 @@ pub struct InstCacheKey {
     // vmcs: Option<Vmcs>,
 }
 
-impl From<u64> for InstCacheKey {
-    fn from(value: u64) -> Self {
-        Self { from: value }
-    }
-}
-
-impl From<InstCacheKey> for u64 {
-    fn from(value: InstCacheKey) -> Self {
-        value.from
-    }
-}
-
 #[derive(Debug)]
 pub struct InstCacheValue {
     pub to: u64,
     pub stop_reason: ProceedInstStopReason,
     #[cfg(feature = "retc")]
-    pub retc_stack_size_diff: i8,
-    #[cfg(feature = "retc")]
     pub retc_stack_diff: Vec<u64>,
+}
+
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
+pub struct TntCacheKey {
+    pub from: u64,
+    pub tnt: TntIter,
+}
+
+#[derive(Debug)]
+pub struct TntCacheValue {
+    coverage: [CoverageIndex; 8 * size_of::<TntIter>()],
+    coverage_entries: usize,
+    to: u64,
+}
+
+#[derive(Debug)]
+pub struct TntCacheValueBuilder {
+    coverage: [CoverageIndex; 8 * size_of::<TntIter>()],
+    coverage_entries: usize,
+}
+
+impl TntCacheValue {
+    pub fn builder() -> TntCacheValueBuilder {
+        TntCacheValueBuilder::new()
+    }
+
+    pub fn coverage(&self) -> &[CoverageIndex] {
+        &self.coverage[0..self.coverage_entries]
+    }
+
+    pub const fn coverage_len(&self) -> usize {
+        self.coverage_entries
+    }
+
+    pub const fn to(&self) -> u64 {
+        self.to
+    }
+}
+
+impl TntCacheValueBuilder {
+    pub fn new() -> Self {
+        Self {
+            coverage_entries: 0,
+            coverage: [CoverageIndex::default(); 8 * size_of::<TntIter>()],
+        }
+    }
+
+    pub const fn add(&mut self, coverage_index: CoverageIndex) {
+        self.coverage[self.coverage_entries] = coverage_index;
+        self.coverage_entries += 1;
+    }
+
+    pub fn build(self, to: u64) -> TntCacheValue {
+        TntCacheValue {
+            to,
+            coverage_entries: self.coverage_entries,
+            coverage: self.coverage,
+        }
+    }
+
+    pub const fn coverage_len(&self) -> usize {
+        self.coverage_entries
+    }
+}
+
+impl Default for TntCacheValueBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }

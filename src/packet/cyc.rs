@@ -1,4 +1,4 @@
-use crate::packet::{PtPacketParseError, SizedPtPacket};
+use crate::packet::PtPacketParseError;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Cyc {
@@ -6,8 +6,8 @@ pub struct Cyc {
     len: usize,
 }
 
-impl SizedPtPacket for Cyc {
-    fn original_size(&self) -> usize {
+impl Cyc {
+    pub const fn original_size(&self) -> usize {
         self.len
     }
 }

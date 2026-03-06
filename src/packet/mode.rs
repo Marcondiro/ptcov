@@ -1,4 +1,4 @@
-use crate::packet::{PtPacketParseError, SizedPtPacket};
+use crate::packet::PtPacketParseError;
 use std::fmt::{Debug, Formatter};
 
 pub(crate) const SIZE: usize = 2;
@@ -108,16 +108,3 @@ impl From<AddressingMode> for u32 {
         }
     }
 }
-
-macro_rules! impl_mode_sized_pt_packet {
-    ($($ty:ty),+ $(,)?) => {
-        $(
-            impl SizedPtPacket for $ty {
-                fn original_size(&self) -> usize {
-                    SIZE
-                }
-            }
-        )+
-    };
-}
-impl_mode_sized_pt_packet!(ModeExec, ModeTsx);

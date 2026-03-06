@@ -1,5 +1,3 @@
-// use crate::packet::SizedPtPacket;
-//
 // #[derive(Debug, PartialEq, Clone)]
 // pub struct Bbp {}
 //
@@ -18,11 +16,5 @@
 // impl SizedPtPacket for Bep {
 //     fn original_size(&self) -> usize {
 //         2
-//     }
-// }
-
-// impl SizedPtPacket for Bip {
-//     fn original_size(&self) -> usize {
-//         todo!()
 //     }
 // }

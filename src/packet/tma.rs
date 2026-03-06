@@ -1,19 +1,11 @@
-use crate::packet::SizedPtPacket;
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct Tma {
     ctc: u16,
     fast_counter: u16,
 }
 
-impl SizedPtPacket for Tma {
-    fn original_size(&self) -> usize {
-        7
-    }
-}
-
 impl Tma {
-    pub(crate) const SIZE: usize = 7;
+    pub const SIZE: usize = 7;
 
     // pub(super) fn try_from_payload(payload: &[u8]) -> Result<Self, PtPacketParseError> {
     //     if payload.len() < 5 {

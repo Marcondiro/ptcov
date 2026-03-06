@@ -1,14 +1,6 @@
-use crate::packet::SizedPtPacket;
-
 #[derive(Debug, PartialEq)]
 pub struct Cbr {
     // core_bus_ratio: u8,
-}
-
-impl SizedPtPacket for Cbr {
-    fn original_size(&self) -> usize {
-        Self::SIZE
-    }
 }
 
 impl Cbr {

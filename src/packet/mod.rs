@@ -52,13 +52,6 @@ pub mod trig;
 pub mod tsc;
 pub mod vmcs;
 
-pub trait SizedPtPacket {
-    /// Size in bytes of the packet as it is in the original trace
-    ///
-    /// This includes header bytes
-    fn original_size(&self) -> usize;
-}
-
 #[non_exhaustive]
 #[derive(Debug, PartialEq, Clone)]
 pub enum PtPacket {
@@ -77,18 +70,6 @@ pub enum PtPacket {
     ModeExec(ModeExec),
     ModeTsx(ModeTsx),
     TraceStop(TraceStop),
-    // /// Timestamp Counter (TSC) Packet
-    // #[cfg(feature = "tsc")]
-    // Tsc(Tsc),
-    // /// Mini Time Counter (MTC) Packet
-    // #[cfg(feature = "mtc")]
-    // Mtc(Mtc),
-    // /// TSC/MTC Alignment (TMA) Packet
-    // #[cfg(all(feature = "tsc", feature = "mtc"))]
-    // Tma(Tma),
-    // /// Cycle Count (CYC) Packet
-    // #[cfg(feature = "cyc")]
-    // Cyc(Cyc),
     /// VMCS Packet
     Vmcs(Vmcs),
     /// Overflow (OVF) Packet
@@ -96,39 +77,6 @@ pub enum PtPacket {
     /// Packet Stream Boundary (PSB) Packet
     Psb(),
     PsbEnd(),
-    // /// Maintenance (MNT) Packet
-    // Mnt(Mnt),
-    // /// PTWRITE (PTW) Packet
-    // #[cfg(feature = "ptw")]
-    // Ptw(Ptw),
-    // /// Execution Stop (EXSTOP) Packet
-    // #[cfg(feature = "pwr")]
-    // Exstop(Exstop),
-    // #[cfg(feature = "pwr")]
-    // Mwait(Mwait),
-    // /// Power Entry (PWRE) Packet
-    // #[cfg(feature = "pwr")]
-    // Pwre(Pwre),
-    // /// Power Exit (PWRX) Packet
-    // #[cfg(feature = "pwr")]
-    // Pwrx(Pwrx),
-    // /// Block Begin Packet (BBP)
-    // #[cfg(feature = "pebs")]
-    // Bbp(Bbp),
-    // /// Block Item Packet (BIP)
-    // #[cfg(feature = "pebs")]
-    // Bip(Bip),
-    // /// Block End Packet (BEP)
-    // #[cfg(feature = "pebs")]
-    // Bep(Bep),
-    // /// Control Flow Event (CFE) Packet
-    // #[cfg(feature = "event")]
-    // Cfe(Cfe),
-    // /// Event Data (EVD) Packet
-    // #[cfg(feature = "event")]
-    // Evd(Evd),
-    // // todo: not (yet?) documented in SDM
-    // Trig(Trig),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -322,53 +270,3 @@ impl PtPacket {
         })
     }
 }
-// impl SizedPtPacket for PtPacket {
-//     fn original_size(&self) -> usize {
-//         match self {
-//             PtPacket::TntShort(..) => TntShort::SIZE,
-//             PtPacket::TntLong(..) => TntLong::SIZE,
-//             PtPacket::Tip(inner) => inner.original_size(),
-//             PtPacket::TipPge(inner) => inner.original_size(),
-//             PtPacket::TipPgd(inner) => inner.original_size(),
-//             PtPacket::Fup(inner) => inner.original_size(),
-//             PtPacket::Pip(..) => Pip::SIZE,
-//             PtPacket::ModeExec(..) => mode::SIZE,
-//             PtPacket::ModeTsx(..) => mode::SIZE,
-//             PtPacket::TraceStop(..) => TraceStop::SIZE,
-//             // #[cfg(feature = "tsc")]
-//             // PtPacket::Tsc(inner) => inner.original_size(),
-//             // #[cfg(feature = "mtc")]
-//             // PtPacket::Mtc(inner) => inner.original_size(),
-//             // #[cfg(all(feature = "tsc", feature = "mtc"))]
-//             // PtPacket::Tma(inner) => inner.original_size(),
-//             // #[cfg(feature = "cyc")]
-//             // PtPacket::Cyc(inner) => inner.original_size(),
-//             PtPacket::Vmcs(..) => Vmcs::SIZE,
-//             PtPacket::Ovf(..) => Ovf::SIZE,
-//             PtPacket::Psb(..) => Psb::SIZE,
-//             PtPacket::PsbEnd(..) => PsbEnd::SIZE,
-//             // PtPacket::Mnt(..) => Mnt::SIZE,
-//             // #[cfg(feature = "ptw")]
-//             // PtPacket::Ptw(inner) => inner.original_size(),
-//             // #[cfg(feature = "pwr")]
-//             // PtPacket::Exstop(inner) => inner.original_size(),
-//             // #[cfg(feature = "pwr")]
-//             // PtPacket::Mwait(inner) => inner.original_size(),
-//             // #[cfg(feature = "pwr")]
-//             // PtPacket::Pwre(inner) => inner.original_size(),
-//             // #[cfg(feature = "pwr")]
-//             // PtPacket::Pwrx(inner) => inner.original_size(),
-//             // #[cfg(feature = "pebs")]
-//             // PtPacket::Bbp(inner) => inner.original_size(),
-//             // #[cfg(feature = "pebs")]
-//             // PtPacket::Bip(inner) => inner.original_size(),
-//             // #[cfg(feature = "pebs")]
-//             // PtPacket::Bep(inner) => inner.original_size(),
-//             // #[cfg(feature = "event")]
-//             // PtPacket::Cfe(inner) => inner.original_size(),
-//             // #[cfg(feature = "event")]
-//             // PtPacket::Evd(inner) => inner.original_size(),
-//             // PtPacket::Trig(..) => Trig::SIZE,
-//         }
-//     }
-// }

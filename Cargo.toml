@@ -47,6 +47,7 @@ log_instructions = ["dep:log"]
 #missing-docs = "warn"
 
 [dependencies]
+hashbrown = "0.16.1"
 iced-x86 = { version = "1.21.0", default-features = false, features = [
   "std",
   "decoder",

@@ -10,7 +10,7 @@ pub struct TntLong {
     pub(super) raw: [u8; 6],
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TntIter {
     inner: u64,
 }
@@ -33,8 +33,8 @@ impl IntoIterator for TntShort {
     type IntoIter = TntIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        let raw64 = self.raw as u64;
-        let inner = (raw64 | 1) << raw64.leading_zeros() << 1;
+        let raw32 = self.raw as u32;
+        let inner = (((raw32 | 1) << raw32.leading_zeros() << 1) as u64) << 32;
         Self::IntoIter { inner }
     }
 }
@@ -94,8 +94,16 @@ impl Iterator for TntIter {
 
         if self.inner != 0 { Some(res) } else { None }
     }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.inner <<= n;
+        self.next()
+    }
 }
 
+// todo: this should be split between a builder with the push method and a consumer with the next
+// method since can_push_tnt_short() on a fully consumed TntIter returns true but does not make sure
+// that there is a trailing bit to 1
 impl TntIter {
     /// Check if the iterator has space for at least one more TntShort
     pub const fn can_push_tnt_short(&self) -> bool {
@@ -109,11 +117,31 @@ impl TntIter {
         let free = self.inner.trailing_zeros();
 
         // clear the trailing end flag
-        self.inner &= self.inner - 1;
+        self.inner &= self.inner.wrapping_sub(1);
 
         let tnt64 = tnt.raw as u64;
         // push the tnt content and the trailing
-        self.inner |= ((tnt64 | 1) << tnt64.leading_zeros() << 1).rotate_right(63 - free);
+        self.inner |= ((tnt64 | 1) << tnt64.leading_zeros() << 1) >> (63 - free);
+    }
+
+    pub const fn len(&self) -> u32 {
+        63u32.saturating_sub(self.inner.trailing_zeros())
+    }
+
+    pub const fn has_next(&self) -> bool {
+        self.inner.trailing_zeros() < 63
+    }
+
+    pub const fn peek(&self) -> Option<bool> {
+        let res = (self.inner >> 63) != 0;
+        if (self.inner << 1) != 0 { Some(res) } else { None }
+    }
+
+    /// Advance the iterator by one position without returning the value
+    /// 
+    /// If the iterator is empty, this will have no effect and the iterator will remain empty.
+    pub const fn advance(&mut self) {
+        self.inner <<= 1;
     }
 }
 

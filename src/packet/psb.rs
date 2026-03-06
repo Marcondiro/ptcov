@@ -1,5 +1,3 @@
-use crate::packet::SizedPtPacket;
-
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Psb {}
 
@@ -35,21 +33,8 @@ impl Psb {
     ];
 }
 
-impl SizedPtPacket for Psb {
-    fn original_size(&self) -> usize {
-        Psb::SIZE
-    }
-}
-
-impl SizedPtPacket for PsbEnd {
-    fn original_size(&self) -> usize {
-        Self::SIZE
-    }
-}
-
 /// Returns the index of the first byte __after__ the first `Psb` packet
 pub(crate) fn first_psb_position(buffer: &[u8]) -> Option<usize> {
-    // todo: consider if optimize this
     for (i, window) in buffer.windows(Psb::SIZE).enumerate() {
         if window == Psb::CONTENT {
             return Some(i);

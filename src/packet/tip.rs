@@ -1,4 +1,4 @@
-use crate::packet::{PtPacketParseError, SizedPtPacket};
+use crate::packet::PtPacketParseError;
 use crate::utils::sign_extend_48;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -32,14 +32,12 @@ impl IpBytes {
     const C64: u8 = 0b110 << 5;
 }
 
-impl SizedPtPacket for Tip {
-    fn original_size(&self) -> usize {
-        self.ip_bytes.original_size()
-    }
-}
-
 impl Tip {
     const IPBYTES_MASK: u8 = 0b1110_0000;
+
+    pub const fn original_size(&self) -> usize {
+        self.ip_bytes.original_size()
+    }
 
     pub const fn ip(&self, last_tip_ip: &mut u64) -> bool {
         *last_tip_ip = match self.ip_bytes {

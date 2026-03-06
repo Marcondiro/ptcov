@@ -1,14 +1,6 @@
-use crate::packet::SizedPtPacket;
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct Tsc {
     raw: [u8; 7],
-}
-
-impl SizedPtPacket for Tsc {
-    fn original_size(&self) -> usize {
-        Self::SIZE
-    }
 }
 
 impl Tsc {

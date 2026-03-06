@@ -1,14 +1,6 @@
-use crate::packet::SizedPtPacket;
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct Pip {
     pub(crate) raw: [u8; 6],
-}
-
-impl SizedPtPacket for Pip {
-    fn original_size(&self) -> usize {
-        Self::SIZE
-    }
 }
 
 impl Pip {

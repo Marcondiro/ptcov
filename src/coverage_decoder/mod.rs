@@ -12,6 +12,7 @@ use cache::*;
 use iced_x86::{Code, FlowControl, Instruction, Register};
 use num_traits::{SaturatingAdd, WrappingAdd};
 use std::fmt::Debug;
+use std::mem;
 
 mod cache;
 
@@ -58,7 +59,8 @@ pub struct PtCoverageDecoder<'a> {
 
     is_syncd: bool,
     state: ExecutionState,
-    proceed_inst_cache: Cache,
+    proceed_inst_cache: InstCache,
+    tnt_cache: TntCache,
 }
 
 #[derive(Debug)]
@@ -134,7 +136,7 @@ impl ExecutionState {
             mode_tsx: ModeTsx::new(TransactionState::Commit),
             save_coverage: true,
             #[cfg(feature = "retc")]
-            ret_comp_stack: Vec::new(), // const hack, Vec::with_capacity(64) should be a better fit
+            ret_comp_stack: Vec::new(), // todo: const hack, Vec::with_capacity(64) should be a better fit
         }
     }
 
@@ -226,7 +228,8 @@ impl<'a> PtCoverageDecoderBuilder<'a> {
             builder: self,
             state: ExecutionState::new(),
             is_syncd: false,
-            proceed_inst_cache: Cache::default(),
+            proceed_inst_cache: InstCache::default(),
+            tnt_cache: TntCache::default(),
         }
     }
 }
@@ -542,112 +545,132 @@ impl PtCoverageDecoder<'_> {
     /// packet is a TNT
     fn proceed_inst_tnt<CE: CoverageEntry>(
         &mut self,
-        tnt_iter: TntIter,
+        mut tnt_iter: TntIter,
         iteration_state: &mut CovDecIterationState<CE>,
     ) -> Result<(), PtDecoderError> {
         use ProceedInstStopReason::*;
         #[cfg(feature = "log_packets")]
         log::trace!("TNT handling start");
 
-        for tnt in tnt_iter {
-            'inst: loop {
-                match self.proceed_inst_until(None)? {
-                    // TNT consumed at the current decision point
-                    CondBranch { branch_to } => {
-                        let from = self.state.ip;
-                        if tnt {
-                            self.state.ip = branch_to;
-                            #[cfg(feature = "log_packets")]
-                            log::trace!("TNT taken to 0x{:x}", branch_to);
-                        } else {
-                            #[cfg(feature = "log_packets")]
-                            log::trace!("TNT not taken");
-                        }
+        let mut tnt_cache_key = TntCacheKey {
+            from: self.state.ip,
+            tnt: tnt_iter,
+        };
+        let mut tnt_cache_val = TntCacheValue::builder();
 
-                        self.add_coverage_entry(from, self.state.ip, iteration_state);
-                        break 'inst;
-                    }
-                    #[cfg(feature = "retc")]
-                    Return => {
-                        if tnt {
-                            let to = self.state.ret_comp_stack.pop().expect("empty ret stack"); //todo better error handling
-                            let to_masked = match self.state.mode_exec.addressing_mode() {
-                                AddressingMode::_16 => to & u16::MAX as u64,
-                                AddressingMode::_32 => to & u32::MAX as u64,
-                                AddressingMode::_64 => to,
-                            };
-                            self.add_coverage_entry(self.state.ip, to_masked, iteration_state);
-                            self.state.ip = to_masked;
-                            #[cfg(feature = "log_packets")]
-                            log::trace!("TNT taken (retc) to 0x{:x}", self.state.ip);
-                        } else {
-                            todo!("better error: broken return compression")
-                        }
-                        break 'inst;
-                    }
-                    // TNT NOT consumed at the current decision point, handle the decision point
-                    // and continue in the loop without consuming the TNT
-                    #[cfg_attr(feature = "retc", expect(unreachable_patterns))]
-                    Indirect | FarIndirect | Return => {
-                        #[cfg(feature = "log_packets")]
-                        log::trace!("TNT Handling deferred TIP");
-                        let deferred = iteration_state.packet_decoder.next_packet()?;
-                        let tip = if let PtPacket::Tip(tip) = deferred {
-                            tip
-                        } else {
-                            return Err(PtDecoderError::InvalidPacketSequence {
-                                packets: vec![deferred],
-                            }); // todo add tnt here to the sequence
-                        };
-
-                        if tip.ip(&mut self.state.tip_last_ip) {
-                            #[cfg(feature = "indirect_edges")]
-                            self.add_coverage_entry(
-                                self.state.ip,
-                                self.state.tip_last_ip,
-                                iteration_state,
-                            );
-                            self.state.ip = self.state.tip_last_ip;
-                        } else {
-                            return Err(PtDecoderError::MalformedPacket);
-                        };
-                    }
-                    MovCr3 => return Err(PtDecoderError::IncoherentImage),
-                    #[cfg(feature = "more_checks")]
-                    UntilIpReached => unreachable!("until parameter is set to None"),
+        'tnt: loop {
+            // retc is not yet supported in tntcache
+            if cfg!(not(feature = "retc"))
+                && let Some(v) = self.tnt_cache.get(&tnt_cache_key)
+            {
+                let _ = tnt_iter.nth(v.coverage_len());
+                self.state.ip = v.to();
+                for i in v.coverage() {
+                    self.add_coverage_from_index(*i, iteration_state);
                 }
+                tnt_cache_key = TntCacheKey {
+                    from: self.state.ip,
+                    tnt: tnt_iter,
+                };
             }
+
+            let tnt = if let Some(tnt) = tnt_iter.peek() {
+                tnt
+            } else {
+                break 'tnt;
+            };
+
+            match self.proceed_inst_until(None)? {
+                // TNT consumed at the current decision point
+                CondBranch { branch_to } => {
+                    tnt_iter.advance();
+                    let from = self.state.ip;
+                    if tnt {
+                        self.state.ip = branch_to;
+                        #[cfg(feature = "log_packets")]
+                        log::trace!("TNT taken to 0x{:x}", branch_to);
+                    } else {
+                        #[cfg(feature = "log_packets")]
+                        log::trace!("TNT not taken");
+                    }
+
+                    let coverage_index =
+                        CoverageIndex::new(from, self.state.ip, iteration_state.coverage.len());
+                    tnt_cache_val.add(coverage_index);
+                    self.add_coverage_from_index(coverage_index, iteration_state);
+                }
+                #[cfg(feature = "retc")]
+                Return => {
+                    tnt_iter.advance();
+                    if tnt {
+                        let to = self.state.ret_comp_stack.pop().expect("empty ret stack"); //todo better error handling
+                        let to_masked = match self.state.mode_exec.addressing_mode() {
+                            AddressingMode::_16 => to & u16::MAX as u64,
+                            AddressingMode::_32 => to & u32::MAX as u64,
+                            AddressingMode::_64 => to,
+                        };
+                        self.add_coverage_entry(self.state.ip, to_masked, iteration_state);
+                        self.state.ip = to_masked;
+                        #[cfg(feature = "log_packets")]
+                        log::trace!("TNT taken (retc) to 0x{:x}", self.state.ip);
+                    } else {
+                        todo!("better error: broken return compression")
+                    }
+                }
+                // TNT NOT consumed at the current decision point, handle the decision point
+                // and continue in the loop without consuming the TNT
+                #[cfg_attr(feature = "retc", expect(unreachable_patterns))]
+                Indirect | FarIndirect | Return => {
+                    #[cfg(feature = "log_packets")]
+                    log::trace!("TNT Handling deferred TIP");
+                    let deferred = iteration_state.packet_decoder.next_packet()?;
+                    let tip = if let PtPacket::Tip(tip) = deferred {
+                        tip
+                    } else {
+                        return Err(PtDecoderError::InvalidPacketSequence {
+                            packets: vec![PtPacket::Tnt(tnt_iter), deferred],
+                        });
+                    };
+
+                    // commit the TNT cache entry
+                    if tnt_cache_val.coverage_len() > 0 {
+                        self.tnt_cache.insert(
+                            tnt_cache_key,
+                            mem::take(&mut tnt_cache_val).build(self.state.ip),
+                        );
+                    }
+
+                    if tip.ip(&mut self.state.tip_last_ip) {
+                        #[cfg(feature = "indirect_edges")]
+                        self.add_coverage_entry(
+                            self.state.ip,
+                            self.state.tip_last_ip,
+                            iteration_state,
+                        );
+                        self.state.ip = self.state.tip_last_ip;
+                        tnt_cache_key = TntCacheKey {
+                            from: self.state.ip,
+                            tnt: tnt_iter,
+                        };
+                    } else {
+                        return Err(PtDecoderError::MalformedPacket);
+                    };
+                }
+                MovCr3 => return Err(PtDecoderError::IncoherentImage),
+                #[cfg(feature = "more_checks")]
+                UntilIpReached => unreachable!("until parameter is set to None"),
+            }
+        }
+
+        if tnt_cache_val.coverage_len() > 0 {
+            self.tnt_cache
+                .insert(tnt_cache_key, tnt_cache_val.build(self.state.ip));
         }
 
         #[cfg(feature = "log_packets")]
         log::trace!("TNT handling end");
         Ok(())
     }
-
-    // fn handle_deferred_tip<CE: CoverageEntry>(
-    //     &mut self,
-    //     iteration_state: &mut CovDecIterationState<CE>,
-    // ) -> Result<(), PtDecoderError> {
-    //     #[cfg(feature = "log_packets")]
-    //     log::trace!("TNT Handling deferred TIP");
-    //     let deferred = iteration_state.packet_decoder.next_packet()?;
-    //     let tip = if let PtPacket::Tip(tip) = deferred {
-    //         tip
-    //     } else {
-    //         return Err(PtDecoderError::InvalidPacketSequence {
-    //             packets: vec![deferred],
-    //         }); // todo add tnt here to the sequence
-    //     };
-    //
-    //     if tip.ip(&mut self.state.tip_last_ip) {
-    //         #[cfg(feature = "indirect_edges")]
-    //         self.add_coverage_entry(self.state.ip, self.state.tip_last_ip, iteration_state);
-    //         self.state.ip = self.state.tip_last_ip;
-    //         Ok(())
-    //     } else {
-    //         Err(PtDecoderError::MalformedPacket)
-    //     }
-    // }
 
     #[inline]
     fn proceed_inst_until(
@@ -660,21 +683,15 @@ impl PtCoverageDecoder<'_> {
 
         // Use cache (only if until is None)
         if until.is_none()
-            && let Some(cache_entry) = self.proceed_inst_cache.get(InstCacheKey {
+            && let Some(cache_entry) = self.proceed_inst_cache.get(&InstCacheKey {
                 from: self.state.ip,
                 // vmcs: self.state.vmcs,
             })
         {
             #[cfg(feature = "retc")]
-            if cache_entry.retc_stack_size_diff > 0 {
-                self.state
-                    .ret_comp_stack
-                    .extend_from_slice(cache_entry.retc_stack_diff.as_slice());
-            } else if cache_entry.retc_stack_size_diff < 0 {
-                self.state.ret_comp_stack.truncate(
-                    self.state.ret_comp_stack.len() + (-cache_entry.retc_stack_size_diff) as usize,
-                );
-            }
+            self.state
+                .ret_comp_stack
+                .extend_from_slice(cache_entry.retc_stack_diff.as_slice());
 
             #[cfg(feature = "log_instructions")]
             log::trace!(
@@ -782,15 +799,7 @@ impl PtCoverageDecoder<'_> {
         };
 
         #[cfg(feature = "retc")]
-        // make sure that the retc stack has indeed max 64 entries and the casts here are ok
-        let retc_stack_size_diff =
-            self.state.ret_comp_stack.len() as i8 - from_retc_stack_size as i8;
-        #[cfg(feature = "retc")]
-        let retc_stack_diff = if retc_stack_size_diff > 0 {
-            self.state.ret_comp_stack[from_retc_stack_size..].to_vec()
-        } else {
-            Vec::new()
-        };
+        let retc_stack_diff = self.state.ret_comp_stack[from_retc_stack_size..].to_vec();
 
         self.proceed_inst_cache.insert(
             InstCacheKey {
@@ -801,8 +810,6 @@ impl PtCoverageDecoder<'_> {
                 to: self.state.ip,
                 stop_reason: reason,
                 #[cfg(feature = "retc")]
-                retc_stack_size_diff,
-                #[cfg(feature = "retc")]
                 retc_stack_diff,
             },
         );
@@ -810,6 +817,7 @@ impl PtCoverageDecoder<'_> {
         Ok(reason)
     }
 
+    #[cfg(feature = "indirect_edges")]
     fn add_coverage_entry<CE: CoverageEntry>(
         &self,
         from: u64,
@@ -820,16 +828,43 @@ impl PtCoverageDecoder<'_> {
             return;
         }
 
-        let cov_entry = coverage_entry(from, to, iteration_state.coverage.len());
-        iteration_state.coverage[cov_entry] =
-            iteration_state.coverage[cov_entry].saturating_add(&1.into());
+        let cov_index = CoverageIndex::new(from, to, iteration_state.coverage.len());
+        self.add_coverage_from_index(cov_index, iteration_state)
+    }
+
+    fn add_coverage_from_index<CE: CoverageEntry>(
+        &self,
+        i: CoverageIndex,
+        iteration_state: &mut CovDecIterationState<CE>,
+    ) {
+        if !self.state.save_coverage {
+            return;
+        }
+
+        // SAFETY: `CoverageIndex.new()` ensures that the inner value is < `coverage.len()`
+        let coverage_entry = unsafe { iteration_state.coverage.get_unchecked_mut(usize::from(i)) };
+
+        *coverage_entry = coverage_entry.wrapping_add(&1.into());
     }
 }
 
-#[inline]
-const fn coverage_entry(from: u64, to: u64, map_len: usize) -> usize {
-    let combined = from ^ to.rotate_left(31);
-    fmix64(combined) as usize & (map_len - 1)
+#[derive(Debug, Clone, Copy, Default)]
+struct CoverageIndex {
+    inner: usize,
+}
+
+impl CoverageIndex {
+    #[inline]
+    const fn new(from: u64, to: u64, map_len: usize) -> Self {
+        let inner = (fmix64(from) ^ fmix64(to)) as usize & (map_len - 1);
+        Self { inner }
+    }
+}
+
+impl From<CoverageIndex> for usize {
+    fn from(value: CoverageIndex) -> Self {
+        value.inner
+    }
 }
 
 #[cold]
