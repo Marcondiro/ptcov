@@ -5,16 +5,19 @@ pub(crate) const SIZE: usize = 2;
 pub(crate) const B0: u8 = 0x99;
 pub(crate) const B1_MASK: u8 = 0xe0;
 
+/// Mode.Exec (MODE) packet payload - current execution mode state.
 #[derive(PartialEq, Clone)]
 pub struct ModeExec {
     raw: u8,
 }
 
+/// Mode.TSX (MODE) packet payload - TSX transaction state.
 #[derive(Debug, PartialEq, Clone)]
 pub struct ModeTsx {
     transaction_state: TransactionState,
 }
 
+/// x86 addressing (CPU operation) mode.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(u8)]
 pub enum AddressingMode {
@@ -37,6 +40,7 @@ pub enum TransactionState {
 impl ModeExec {
     pub(crate) const B1: u8 = 0x00;
 
+    /// Returns the current x86 addressing mode.
     pub const fn addressing_mode(&self) -> AddressingMode {
         match self.raw & 0x03 {
             _16 if _16 == AddressingMode::_16 as u8 => AddressingMode::_16,
@@ -46,6 +50,7 @@ impl ModeExec {
         }
     }
 
+    /// Returns the interrupt flag state at the time of the mode change.
     pub const fn interrupt_flag(&self) -> bool {
         self.raw & 0x04 != 0
     }
@@ -68,6 +73,7 @@ impl ModeExec {
 impl ModeTsx {
     pub(crate) const B1: u8 = 0x20;
 
+    /// Returns the current TSX transaction state.
     pub const fn transaction_state(&self) -> TransactionState {
         self.transaction_state
     }

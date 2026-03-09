@@ -1,3 +1,4 @@
+/// CPU model information used to apply the correct errata workarounds during decoding.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PtCpu {
     vendor: PtCpuVendor,
@@ -5,6 +6,7 @@ pub struct PtCpu {
     model: u8,
 }
 
+/// CPU vendor.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]
 pub enum PtCpuVendor {
@@ -132,6 +134,7 @@ pub(crate) struct CpuErrata {
 }
 
 impl PtCpu {
+    /// Creates a new `PtCpu` with the given vendor, family, model, and stepping.
     pub const fn new(vendor: PtCpuVendor, family: u16, model: u8, _stepping: u8) -> Self {
         Self {
             vendor,

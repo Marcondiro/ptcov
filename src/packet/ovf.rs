@@ -1,3 +1,4 @@
+/// Overflow (OVF) packet, indicating a PT buffer overflow.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Ovf {}
 

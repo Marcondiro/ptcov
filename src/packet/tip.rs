@@ -1,6 +1,7 @@
 use crate::packet::PtPacketParseError;
 use crate::utils::sign_extend_48;
 
+/// Target IP packet payload, shared by TIP, TIP.PGE, TIP.PGD, and FUP packets.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Tip {
     ip_bytes: IpBytes,
@@ -11,13 +12,16 @@ pub type TipPge = Tip;
 pub type TipPgd = Tip;
 pub type Fup = Tip;
 
+/// Number of IP bytes encoded in a TIP packet payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 #[non_exhaustive]
 pub enum IpBytes {
+    /// No IP payload (update suppressed).
     None = IpBytes::NONE,
     _16 = IpBytes::C16,
     _32 = IpBytes::C32,
+    /// 48-bit IP sign-extended to 64 bits.
     SignExtend48 = IpBytes::SIGN_EXTEND48,
     _48 = IpBytes::C48,
     _64 = IpBytes::C64,
@@ -35,10 +39,14 @@ impl IpBytes {
 impl Tip {
     const IPBYTES_MASK: u8 = 0b1110_0000;
 
+    /// Returns the encoded packet size in bytes, including the header byte.
     pub const fn original_size(&self) -> usize {
         self.ip_bytes.original_size()
     }
 
+    /// Resolves the target IP using `last_tip_ip` for delta compression and updates it.
+    ///
+    /// Returns `true` if an IP was available, `false` if the packet has no IP payload.
     pub const fn ip(&self, last_tip_ip: &mut u64) -> bool {
         *last_tip_ip = match self.ip_bytes {
             IpBytes::None => return false,

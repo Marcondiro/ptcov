@@ -1,3 +1,4 @@
+/// VMCS (Virtual Machine Control Structure) packet.
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
 #[repr(transparent)]
 pub struct Vmcs {

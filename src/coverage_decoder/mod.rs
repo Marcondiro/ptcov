@@ -16,21 +16,36 @@ use std::mem;
 
 mod cache;
 
+/// Marker trait for coverage map entry types.
+///
+/// Implementors must be numeric types that support saturating and wrapping addition
+/// and can be constructed from a `u8`.
 pub trait CoverageEntry: Copy + Debug + From<u8> + SaturatingAdd + WrappingAdd {}
 impl<T> CoverageEntry for T where T: Copy + Debug + From<u8> + SaturatingAdd + WrappingAdd {}
 
+/// Errors returned by [`PtCoverageDecoder`].
 #[derive(Debug, PartialEq)]
 #[non_exhaustive]
 pub enum PtDecoderError {
+    /// Unexpected end of trace buffer.
     Eof,
+    /// Decoder reached an inconsistent internal state.
     IncoherentState,
+    /// Decoded instruction flow is inconsistent with the provided images.
     IncoherentImage,
+    /// An argument passed to the decoder is invalid.
     InvalidArgument,
+    /// Received an unexpected PT packet sequence.
     InvalidPacketSequence { packets: Vec<PtPacket> },
+    /// Could not decode an x86 instruction.
     MalformedInstruction,
+    /// Could not parse a PT packet.
     MalformedPacket,
+    /// Could not parse a PSB+ block.
     MalformedPsbPlus,
+    /// No image found covering the given virtual address.
     MissingImage { address: u64 },
+    /// Could not find a PSB synchronization point in the trace.
     SyncFailed,
     // todo: if an OVF packet is encountered, the coverage might be incomplete and a source of
     // fuzzer instability. Consider returning this information so that a fuzzer using this lib can
@@ -46,6 +61,7 @@ impl From<PtPacketParseError> for PtDecoderError {
     }
 }
 
+/// Builder for [`PtCoverageDecoder`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct PtCoverageDecoderBuilder<'a> {
     cpu: Option<PtCpu>, // todo: consider if caching the errata makes sense
@@ -53,6 +69,9 @@ pub struct PtCoverageDecoderBuilder<'a> {
     filter_vmx_non_root: bool,
 }
 
+/// Intel Processor Trace coverage decoder.
+///
+/// Decodes PT traces and computes edge coverage in an AFL-style bitmap.
 #[derive(Debug)]
 pub struct PtCoverageDecoder<'a> {
     builder: PtCoverageDecoderBuilder<'a>,
@@ -193,6 +212,7 @@ impl ExecutionState {
 }
 
 impl<'a> PtCoverageDecoderBuilder<'a> {
+    /// Creates a new builder with default settings.
     pub const fn new() -> Self {
         Self {
             cpu: None,
@@ -223,6 +243,7 @@ impl<'a> PtCoverageDecoderBuilder<'a> {
         self
     }
 
+    /// Builds a [`PtCoverageDecoder`].
     pub fn build(self) -> PtCoverageDecoder<'a> {
         PtCoverageDecoder {
             builder: self,
@@ -241,7 +262,9 @@ impl<'a> Default for PtCoverageDecoderBuilder<'a> {
 }
 
 impl PtCoverageDecoder<'_> {
-    /// `coverage` must have a len multiple of 2 and > 0.
+    /// Decodes `pt_trace` and increments coverage map entries for each executed edge.
+    ///
+    /// `coverage` must have a power-of-two length greater than zero.
     pub fn coverage<CE>(
         &mut self,
         pt_trace: &[u8],
