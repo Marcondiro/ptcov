@@ -10,6 +10,7 @@ pub struct PtCpu {
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]
 pub enum PtCpuVendor {
+    /// Intel
     Intel,
 }
 

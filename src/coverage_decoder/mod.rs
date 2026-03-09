@@ -36,7 +36,10 @@ pub enum PtDecoderError {
     /// An argument passed to the decoder is invalid.
     InvalidArgument,
     /// Received an unexpected PT packet sequence.
-    InvalidPacketSequence { packets: Vec<PtPacket> },
+    InvalidPacketSequence { 
+        /// Sequence of packets that led to the error.
+        packets: Vec<PtPacket> 
+    },
     /// Could not decode an x86 instruction.
     MalformedInstruction,
     /// Could not parse a PT packet.
@@ -44,7 +47,10 @@ pub enum PtDecoderError {
     /// Could not parse a PSB+ block.
     MalformedPsbPlus,
     /// No image found covering the given virtual address.
-    MissingImage { address: u64 },
+    MissingImage { 
+        /// The virtual address that could not be found in any PtImage.
+        address: u64
+    },
     /// Could not find a PSB synchronization point in the trace.
     SyncFailed,
     // todo: if an OVF packet is encountered, the coverage might be incomplete and a source of

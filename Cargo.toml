@@ -44,7 +44,7 @@ log_packets = ["dep:log"]
 log_instructions = ["dep:log"]
 
 [lints.rust]
-#missing-docs = "warn"
+missing-docs = "warn"
 
 [dependencies]
 hashbrown = "0.16.1"
