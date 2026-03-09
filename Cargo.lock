@@ -223,7 +223,7 @@ dependencies = [
 
 [[package]]
 name = "ptcov"
-version = "0.0.7"
+version = "0.1.0-beta.1"
 dependencies = [
  "env_logger",
  "hashbrown",
