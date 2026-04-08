@@ -846,7 +846,7 @@ impl PtCoverageDecoder<'_> {
         Ok(reason)
     }
 
-    #[cfg(feature = "indirect_edges")]
+    #[cfg(any(feature = "indirect_edges", feature = "retc"))]
     fn add_coverage_entry<CE: CoverageEntry>(
         &self,
         from: u64,
