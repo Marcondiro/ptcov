@@ -8,13 +8,21 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  default-features:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Build
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+  all-features:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - name: Install cargo-all-features
+      run: cargo install cargo-all-features
+    - name: Build
+      run: cargo all-features build --verbose
+    - name: Run tests
+      run: cargo all-features test --verbose
