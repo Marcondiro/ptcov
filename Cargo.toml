@@ -43,6 +43,10 @@ log = ["log_packets", "log_instructions"]
 log_packets = ["dep:log"]
 log_instructions = ["dep:log"]
 
+[package.metadata.cargo-all-features]
+# Exclude not yet implemented features from the build matrix
+denylist = ["pwr", "event", "ptw", "pebs"]
+
 [lints.rust]
 missing-docs = "warn"
 
