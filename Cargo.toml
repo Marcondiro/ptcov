@@ -51,7 +51,7 @@ denylist = ["pwr", "event", "ptw", "pebs"]
 missing-docs = "warn"
 
 [dependencies]
-hashbrown = "0.16.1"
+hashbrown = "0.17.0"
 iced-x86 = { version = "1.21.0", default-features = false, features = [
   "std",
   "decoder",
