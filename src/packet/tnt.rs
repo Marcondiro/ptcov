@@ -142,11 +142,15 @@ impl TntIter {
     /// Returns the next decision without consuming it.
     pub const fn peek(&self) -> Option<bool> {
         let res = (self.inner >> 63) != 0;
-        if (self.inner << 1) != 0 { Some(res) } else { None }
+        if (self.inner << 1) != 0 {
+            Some(res)
+        } else {
+            None
+        }
     }
 
     /// Advance the iterator by one position without returning the value
-    /// 
+    ///
     /// If the iterator is empty, this will have no effect and the iterator will remain empty.
     pub const fn advance(&mut self) {
         self.inner <<= 1;

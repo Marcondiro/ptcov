@@ -1,6 +1,6 @@
 // todo better debug print
 /// A memory chunk containing (a part of) the target's executable memory.
-/// 
+///
 /// This is disassembled during trace decoding to reconstruct the execution flow.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PtImage<'a> {
