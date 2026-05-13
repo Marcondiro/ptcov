@@ -765,12 +765,10 @@ impl PtCoverageDecoder<'_> {
             let ins = inst_decoder.decode();
             #[cfg(feature = "log_instructions")]
             log::trace!(
-                "\tip: 0x{:x}: {:?} {:?} raw: {:x?}",
+                "\tip: 0x{:x}: {:?} {:?}",
                 inst_decoder.ip() - ins.len() as u64,
                 ins.code(),
-                ins.op0_kind(),
-                &self.builder.images[0].data()
-                    [inst_decoder.position()..inst_decoder.position() + ins.len()],
+                ins.op0_kind()
             );
             if ins.is_invalid() {
                 return Err(PtDecoderError::MalformedInstruction);
