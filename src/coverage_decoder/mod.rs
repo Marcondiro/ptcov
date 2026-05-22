@@ -777,6 +777,7 @@ impl PtCoverageDecoder<'_> {
             match InstructionClass::from(&ins) {
                 // Just proceed to the subsequent instruction, can continue with instruction decoder
                 InstructionClass::Other => continue,
+                // zero-length CALLs are ignored by return compression
                 InstructionClass::JumpDirect | InstructionClass::CallDirect
                     if ins.near_branch_target() == ins.next_ip() =>
                 {
@@ -785,13 +786,22 @@ impl PtCoverageDecoder<'_> {
                 // Needs trace to proceed
                 InstructionClass::JumpIndirect
                 | InstructionClass::MovCr3
-                | InstructionClass::CallIndirect
                 | InstructionClass::CondBranch
                 | InstructionClass::FarCall
                 | InstructionClass::FarJump
                 | InstructionClass::FarReturn
                 | InstructionClass::Return => {
                     self.state.ip = inst_decoder.ip();
+                    break ins;
+                }
+                InstructionClass::CallIndirect => {
+                    self.state.ip = inst_decoder.ip();
+                    #[cfg(feature = "retc")]
+                    {
+                        self.state.ret_comp_stack.push(inst_decoder.ip());
+                        #[cfg(feature = "log_packets")]
+                        log::trace!("Pushed on retc stack: 0x{:x}", inst_decoder.ip());
+                    }
                     break ins;
                 }
                 // Reposition instruction decoder before continuing
