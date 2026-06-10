@@ -1,6 +1,12 @@
+#[cfg(feature = "pebs")]
+use crate::packet::bbp::Bbp;
 use crate::packet::cbr::Cbr;
+#[cfg(feature = "event")]
+use crate::packet::cfe::Cfe;
 #[cfg(feature = "cyc")]
 use crate::packet::cyc::Cyc;
+#[cfg(feature = "event")]
+use crate::packet::evd::Evd;
 use crate::packet::mnt::Mnt;
 use crate::packet::mode::{ModeExec, ModeTsx};
 #[cfg(feature = "mtc")]
@@ -19,6 +25,10 @@ use crate::packet::tsc::Tsc;
 use crate::packet::vmcs::Vmcs;
 
 use crate::packet::pad::Pad;
+#[cfg(feature = "ptw")]
+use crate::packet::ptw::Ptw;
+#[cfg(feature = "pwr")]
+use crate::packet::pwr::{Exstop, Mwait, Pwre, Pwrx};
 
 #[cfg(feature = "pebs")]
 pub mod bbp;
@@ -236,23 +246,47 @@ impl PtPacket {
                     continue;
                 }
                 #[cfg(feature = "pwr")]
-                [0x02, 0xc2, ..] => todo!(),
+                [0x02, Mwait::B1, ..] => {
+                    *pos += Mwait::SIZE;
+                    continue;
+                }
                 #[cfg(feature = "pwr")]
-                [0x02, 0x22, ..] => todo!(),
+                [0x02, Pwre::B1, ..] => {
+                    *pos += Pwre::SIZE;
+                    continue;
+                }
                 #[cfg(feature = "pwr")]
-                [0x02, 0xa2, ..] => todo!(),
+                [0x02, Pwrx::B1, ..] => {
+                    *pos += Pwrx::SIZE;
+                    continue;
+                }
                 #[cfg(feature = "event")]
-                [0x02, 0x13, ..] => todo!(),
+                [0x02, Cfe::B1, ..] => {
+                    *pos += Cfe::SIZE;
+                    continue;
+                }
                 #[cfg(feature = "event")]
-                [0x02, 0x53, ..] => todo!(),
+                [0x02, Evd::B1, ..] => {
+                    *pos += Evd::SIZE;
+                    continue;
+                }
                 #[cfg(feature = "ptw")]
-                [0x02, b1, ..] if b1 & 0x1f == 0x12 => todo!(),
+                [0x02, b1, ..] if b1 & 0x1f == 0x12 => {
+                    *pos += Ptw::size(*b1)?;
+                    continue;
+                }
                 #[cfg(feature = "pebs")]
                 [0x02, 0x33 | 0xb3, ..] => todo!(),
                 #[cfg(feature = "pebs")]
-                [0x02, 0x63, ..] => todo!(),
+                [0x02, Bbp::B1, ..] => {
+                    *pos += Bbp::SIZE;
+                    continue;
+                }
                 #[cfg(feature = "pwr")]
-                [0x02, 0x62 | 0xe2, ..] => todo!(),
+                [0x02, 0x62 | 0xe2, ..] => {
+                    *pos += Exstop::SIZE;
+                    continue;
+                }
                 #[cfg(feature = "tsc")]
                 [0x19, ..] => {
                     *pos += Tsc::SIZE;

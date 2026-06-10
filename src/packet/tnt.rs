@@ -165,18 +165,18 @@ mod tests {
     fn iterate_tnt_short() {
         let raw = 0b00110100u8;
         let p = TntShort { raw };
-        let p2 = p.clone();
+        let p2 = p;
         let mut iter = p.into_iter();
 
-        let right = vec![true, false].repeat(2);
-        assert_eq!(iter.clone().collect::<Vec<_>>(), right);
+        let right = [true, false].repeat(2);
+        assert_eq!(iter.collect::<Vec<_>>(), right);
 
         assert!(iter.can_push_tnt_short());
         unsafe {
             iter.push(p2);
         }
 
-        let right = vec![true, false].repeat(2).repeat(2);
+        let right = [true, false].repeat(2).repeat(2);
         assert_eq!(iter.collect::<Vec<_>>(), right);
     }
 
@@ -185,10 +185,10 @@ mod tests {
         let raw = [0b10101010, 0b10101010, 0b10101010, 0b10101010, 0, 0];
         let p = TntLong { raw };
 
-        let mut right = vec![false, true].repeat(15);
+        let mut right = [false, true].repeat(15);
         right.push(false);
 
-        assert_eq!(p.clone().into_iter().collect::<Vec<_>>().len(), right.len());
+        assert_eq!(p.into_iter().collect::<Vec<_>>().len(), right.len());
         assert_eq!(p.into_iter().collect::<Vec<_>>(), right);
     }
 }

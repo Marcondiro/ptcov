@@ -40,8 +40,8 @@ stronger_hash = []
 indirect_edges = []
 
 log = ["log_packets", "log_instructions"]
-log_packets = ["dep:log"]
-log_instructions = ["dep:log"]
+log_packets = []
+log_instructions = []
 
 [package.metadata.cargo-all-features]
 # Exclude not yet implemented features from the build matrix
@@ -57,7 +57,7 @@ iced-x86 = { version = "1.21.0", default-features = false, features = [
   "decoder",
   "instr_info",
 ] }
-log = { version = "0.4.29", optional = true }
+log = { version = "0.4.29" }
 num-traits = "0.2.19"
 
 [dev-dependencies]

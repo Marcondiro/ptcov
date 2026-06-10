@@ -643,7 +643,10 @@ impl PtCoverageDecoder<'_> {
                         #[cfg(feature = "log_packets")]
                         log::trace!("TNT taken (retc) to 0x{:x}", self.state.ip);
                     } else {
-                        todo!("better error: broken return compression")
+                        log::error!(
+                            "Broken return compression. TNT taken expected, found TNT not taken"
+                        );
+                        return Err(PtDecoderError::IncoherentState);
                     }
                 }
                 // TNT NOT consumed at the current decision point, handle the decision point
