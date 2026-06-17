@@ -51,6 +51,8 @@ pub enum PtDecoderError {
         /// The virtual address that could not be found in any PtImage.
         address: u64,
     },
+    /// Return compression referred to a return target, but the return stack was empty.
+    ReturnCompressionStackUnderflow,
     /// Could not find a PSB synchronization point in the trace.
     SyncFailed,
     // todo: if an OVF packet is encountered, the coverage might be incomplete and a source of
@@ -632,7 +634,11 @@ impl PtCoverageDecoder<'_> {
                 Return => {
                     tnt_iter.advance();
                     if tnt {
-                        let to = self.state.ret_comp_stack.pop().expect("empty ret stack"); //todo better error handling
+                        let to = self
+                            .state
+                            .ret_comp_stack
+                            .pop()
+                            .ok_or(PtDecoderError::ReturnCompressionStackUnderflow)?;
                         let to_masked = match self.state.mode_exec.addressing_mode() {
                             AddressingMode::_16 => to & u16::MAX as u64,
                             AddressingMode::_32 => to & u32::MAX as u64,
