@@ -1,5 +1,5 @@
 use crate::packet::PtPacketParseError;
-use std::fmt::{Debug, Formatter};
+use core::fmt::{Debug, Formatter};
 
 pub(crate) const SIZE: usize = 2;
 pub(crate) const B0: u8 = 0x99;
@@ -95,7 +95,7 @@ impl ModeTsx {
 }
 
 impl Debug for ModeExec {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         let addressing_mode = self.addressing_mode();
         let interrupt_flag = self.interrupt_flag();
         write!(

@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Formatter};
+use core::fmt::{Debug, Formatter};
 
 /// Short TNT packet (1 byte), carrying up to 6 taken/not-taken decisions.
 #[derive(Clone, Copy, PartialEq)]
@@ -21,7 +21,7 @@ pub struct TntIter {
 }
 
 impl Debug for TntShort {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         let tnt_str = self.into_iter().map(|e| if e { 'T' } else { 'N' }).fold(
             String::new(),
             |mut acc, e| {
@@ -38,7 +38,7 @@ impl IntoIterator for TntShort {
     type IntoIter = TntIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        let raw32 = self.raw as u32;
+        let raw32 = u32::from(self.raw);
         let inner = (((raw32 | 1) << raw32.leading_zeros() << 1) as u64) << 32;
         Self::IntoIter { inner }
     }
@@ -110,10 +110,10 @@ impl Iterator for TntIter {
 // method since can_push_tnt_short() on a fully consumed TntIter returns true but does not make sure
 // that there is a trailing bit to 1
 impl TntIter {
-    /// Check if the iterator has space for at least one more TntShort
+    /// Check if the iterator has space for at least one more `TntShort`
     pub const fn can_push_tnt_short(&self) -> bool {
         // tnt short contains at most 6 tnt bits
-        self.inner & 0x3f == 0
+        self.inner.trailing_zeros() >= 6
     }
 
     /// SAFETY: the caller must make sure that the iterator has enough space, the last 6 bits of

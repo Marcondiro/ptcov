@@ -1,4 +1,4 @@
-use std::fmt;
+use core::fmt;
 
 /// A memory chunk containing (a part of) the target's executable memory.
 ///
@@ -24,6 +24,7 @@ impl fmt::Debug for PtImage<'_> {
 
 impl<'a> PtImage<'a> {
     /// Creates a new image containing `data` mapped at `virtual_address`.
+    #[must_use]
     pub const fn new(data: &'a [u8], virtual_address: u64) -> Self {
         Self {
             data,
@@ -34,26 +35,31 @@ impl<'a> PtImage<'a> {
     }
 
     /// Returns the raw bytes of the image.
+    #[must_use]
     pub const fn data(&self) -> &[u8] {
         self.data
     }
 
     /// Returns the start virtual address of the image.
+    #[must_use]
     pub const fn virtual_address_start(&self) -> u64 {
         self.virtual_address
     }
 
     /// Returns the exclusive end virtual address of the image.
+    #[must_use]
     pub const fn virtual_address_end(&self) -> u64 {
         self.virtual_address + self.data.len() as u64
     }
 
     /// Returns the image CR3 value, if set.
+    #[must_use]
     pub const fn cr3(&self) -> Option<u64> {
         self.cr3
     }
 
     /// Returns the image VMCS pointer value, if set.
+    #[must_use]
     pub const fn vmcs_ptr(&self) -> Option<u64> {
         self.vmcs_ptr
     }

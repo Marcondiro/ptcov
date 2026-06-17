@@ -9,10 +9,10 @@ use crate::packet::vmcs::Vmcs;
 use crate::packet::{PtPacket, PtPacketParseError};
 use crate::utils::fmix64;
 use cache::*;
+use core::fmt::Debug;
+use core::mem;
 use iced_x86::{Code, FlowControl, Instruction, Register};
 use num_traits::{SaturatingAdd, WrappingAdd};
-use std::fmt::Debug;
-use std::mem;
 
 mod cache;
 
@@ -48,7 +48,7 @@ pub enum PtDecoderError {
     MalformedPsbPlus,
     /// No image found covering the given virtual address.
     MissingImage {
-        /// The virtual address that could not be found in any PtImage.
+        /// The virtual address that could not be found in any `PtImage`.
         address: u64,
     },
     /// Return compression referred to a return target, but the return stack was empty.
@@ -221,6 +221,7 @@ impl ExecutionState {
 
 impl<'a> PtCoverageDecoderBuilder<'a> {
     /// Creates a new builder with default settings.
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             cpu: None,
@@ -233,6 +234,7 @@ impl<'a> PtCoverageDecoderBuilder<'a> {
     ///
     /// Providing the CPU is optional but, it will allow the decoder to consider the relevant CPU
     /// erratas, improving decoding quality.
+    #[must_use]
     pub const fn cpu(mut self, cpu: Option<PtCpu>) -> Self {
         self.cpu = cpu;
         self
@@ -240,18 +242,21 @@ impl<'a> PtCoverageDecoderBuilder<'a> {
 
     /// Consider only execution in VMX non-root when computing coverage, ignore VMX root
     /// (hypervisor) traces.
+    #[must_use]
     pub const fn filter_vmx_non_root(mut self, filter_vmx_non_root: bool) -> Self {
         self.filter_vmx_non_root = filter_vmx_non_root;
         self
     }
 
     /// Exact runtime memory image of the executed target.
+    #[must_use]
     pub fn images(mut self, images: &'a [PtImage<'a>]) -> Self {
         self.images = images;
         self
     }
 
     /// Builds a [`PtCoverageDecoder`].
+    #[must_use]
     pub fn build(self) -> PtCoverageDecoder<'a> {
         PtCoverageDecoder {
             builder: self,
@@ -263,7 +268,7 @@ impl<'a> PtCoverageDecoderBuilder<'a> {
     }
 }
 
-impl<'a> Default for PtCoverageDecoderBuilder<'a> {
+impl Default for PtCoverageDecoderBuilder<'_> {
     fn default() -> Self {
         Self::new()
     }
@@ -289,7 +294,7 @@ impl PtCoverageDecoder<'_> {
 
         loop {
             match self.proceed_with_trace(&mut iteration_state) {
-                Ok(()) => continue,
+                Ok(()) => {}
                 Err(PtDecoderError::Eof) => break Ok(()),
                 Err(e) => break Err(e),
             }
@@ -322,7 +327,7 @@ impl PtCoverageDecoder<'_> {
                     packets: vec![packet],
                 });
             }
-        };
+        }
         Ok(())
     }
 
@@ -385,11 +390,11 @@ impl PtCoverageDecoder<'_> {
     }
 
     fn handle_fup_after_ovf(&mut self, fup: Fup) -> Result<(), PtDecoderError> {
-        if !fup.ip(&mut self.state.tip_last_ip) {
-            Err(PtDecoderError::MalformedPacket)
-        } else {
+        if fup.ip(&mut self.state.tip_last_ip) {
             self.state.ip = self.state.tip_last_ip;
             Ok(())
+        } else {
+            Err(PtDecoderError::MalformedPacket)
         }
     }
 
@@ -605,9 +610,7 @@ impl PtCoverageDecoder<'_> {
                 };
             }
 
-            let tnt = if let Some(tnt) = tnt_iter.peek() {
-                tnt
-            } else {
+            let Some(tnt) = tnt_iter.peek() else {
                 break 'tnt;
             };
 
@@ -640,8 +643,8 @@ impl PtCoverageDecoder<'_> {
                             .pop()
                             .ok_or(PtDecoderError::ReturnCompressionStackUnderflow)?;
                         let to_masked = match self.state.mode_exec.addressing_mode() {
-                            AddressingMode::_16 => to & u16::MAX as u64,
-                            AddressingMode::_32 => to & u32::MAX as u64,
+                            AddressingMode::_16 => to & u64::from(u16::MAX),
+                            AddressingMode::_32 => to & u64::from(u32::MAX),
                             AddressingMode::_64 => to,
                         };
                         self.add_coverage_entry(self.state.ip, to_masked, iteration_state);
@@ -662,9 +665,7 @@ impl PtCoverageDecoder<'_> {
                     #[cfg(feature = "log_packets")]
                     log::trace!("TNT Handling deferred TIP");
                     let deferred = iteration_state.packet_decoder.next_packet()?;
-                    let tip = if let PtPacket::Tip(tip) = deferred {
-                        tip
-                    } else {
+                    let PtPacket::Tip(tip) = deferred else {
                         return Err(PtDecoderError::InvalidPacketSequence {
                             packets: vec![PtPacket::Tnt(tnt_iter), deferred],
                         });
@@ -692,7 +693,7 @@ impl PtCoverageDecoder<'_> {
                         };
                     } else {
                         return Err(PtDecoderError::MalformedPacket);
-                    };
+                    }
                 }
                 MovCr3 => return Err(PtDecoderError::IncoherentImage),
                 #[cfg(feature = "more_checks")]
@@ -875,7 +876,7 @@ impl PtCoverageDecoder<'_> {
         }
 
         let cov_index = CoverageIndex::new(from, to, iteration_state.coverage.len());
-        self.add_coverage_from_index(cov_index, iteration_state)
+        self.add_coverage_from_index(cov_index, iteration_state);
     }
 
     fn add_coverage_from_index<CE: CoverageEntry>(
@@ -900,6 +901,7 @@ struct CoverageIndex {
 }
 
 impl CoverageIndex {
+    #[allow(clippy::cast_possible_truncation)]
     #[inline]
     const fn new(from: u64, to: u64, map_len: usize) -> Self {
         let inner = (fmix64(from) ^ fmix64(to)) as usize & (map_len - 1);

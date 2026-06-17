@@ -14,6 +14,7 @@ pub enum PtCpuVendor {
     Intel,
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug)]
 pub(crate) struct CpuErrata {
     /** BDM70: Intel(R) Processor Trace PSB+ Packets May Contain
@@ -51,15 +52,15 @@ pub(crate) struct CpuErrata {
      */
     pub skd007: bool,
 
-    /** SKD022: VM Entry That Clears TraceEn May Generate a FUP.
+    /** SKD022: VM Entry That Clears `TraceEn` May Generate a FUP.
      *
      * Same as: SKL024, KBL023.
      *
      * If VM entry clears Intel(R) PT (Intel Processor Trace)
-     * IA32_RTIT_CTL.TraceEn (MSR 570H, bit 0) while PacketEn is 1 then a
+     * `IA32_RTIT_CTL.TraceEn` (MSR 570H, bit 0) while `PacketEn` is 1 then a
      * FUP (Flow Update Packet) will precede the TIP.PGD (Target IP Packet,
-     * Packet Generation Disable).  VM entry can clear TraceEn if the
-     * VM-entry MSR-load area includes an entry for the IA32_RTIT_CTL MSR.
+     * Packet Generation Disable).  VM entry can clear `TraceEn` if the
+     * VM-entry MSR-load area includes an entry for the `IA32_RTIT_CTL` MSR.
      */
     pub skd022: bool,
 
@@ -78,7 +79,7 @@ pub(crate) struct CpuErrata {
      * Same as: KBL014.
      *
      * When Intel PT (Intel Processor Trace) is enabled and a direct
-     * unconditional branch clears IA32_RTIT_STATUS.FilterEn (MSR 571H, bit
+     * unconditional branch clears `IA32_RTIT_STATUS.FilterEn` (MSR 571H, bit
      * 0), due to this erratum, the resulting TIP.PGD (Target IP Packet,
      * Packet Generation Disable) may not have an IP payload with the target
      * IP.
@@ -91,7 +92,7 @@ pub(crate) struct CpuErrata {
      * Update Packets), should be issued only between TIP.PGE (Target IP
      * Packet - Packet Generation Enable) and TIP.PGD (Target IP Packet -
      * Packet Generation Disable) packets.  When outside a TIP.PGE/TIP.PGD
-     * pair, as a result of IA32_RTIT_STATUS.FilterEn[0] (MSR 571H) being
+     * pair, as a result of `IA32_RTIT_STATUS.FilterEn`[0] (MSR 571H) being
      * cleared, an OVF (Overflow) packet may be unexpectedly followed by a
      * FUP.
      */
@@ -100,9 +101,9 @@ pub(crate) struct CpuErrata {
     /** APL11: Intel(R) PT OVF Packet May Be Followed by TIP.PGD Packet
      *
      * If Intel PT (Processor Trace) encounters an internal buffer overflow
-     * and generates an OVF (Overflow) packet just as IA32_RTIT_CTL (MSR
-     * 570H) bit 0 (TraceEn) is cleared, or during a far transfer that
-     * causes IA32_RTIT_STATUS.ContextEn[1] (MSR 571H) to be cleared, the
+     * and generates an OVF (Overflow) packet just as `IA32_RTIT_CTL` (MSR
+     * 570H) bit 0 (`TraceEn`) is cleared, or during a far transfer that
+     * causes `IA32_RTIT_STATUS.ContextEn`[1] (MSR 571H) to be cleared, the
      * OVF may be followed by a TIP.PGD (Target Instruction Pointer - Packet
      * Generation Disable) packet.
      */
@@ -128,7 +129,7 @@ pub(crate) struct CpuErrata {
      * execution control bit 25, respectively, in the VMCS (Virtual Machine
      * Control Structure) for that guest, any TMA (TSC(MTC Alignment)
      * packet generated will have corrupted values in the CTC (Core Timer
-     * Copy) and FastCounter fields.  Additionally, the corrupted TMA
+     * Copy) and `FastCounter` fields.  Additionally, the corrupted TMA
      * packet will be followed by a bogus data byte.
      */
     pub skz84: bool,
@@ -136,6 +137,7 @@ pub(crate) struct CpuErrata {
 
 impl PtCpu {
     /// Creates a new `PtCpu` with the given vendor, family, model, and stepping.
+    #[must_use]
     pub const fn new(vendor: PtCpuVendor, family: u16, model: u8, _stepping: u8) -> Self {
         Self {
             vendor,

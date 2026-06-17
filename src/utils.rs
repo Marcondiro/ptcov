@@ -1,6 +1,6 @@
 /// Sign-extends a 48-bit value to a full 64-bit.
 pub const fn sign_extend_48(x: u64) -> u64 {
-    ((x << 16) as i64 >> 16) as u64
+    ((x << 16).cast_signed() >> 16).cast_unsigned()
 }
 
 /// Murmur3 finalizer (mixer)

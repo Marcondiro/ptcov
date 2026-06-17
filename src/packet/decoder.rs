@@ -49,7 +49,7 @@ impl<'a> PtPacketDecoder<'a> {
 
     /// Sets the current byte position in the buffer.
     pub const fn set_pos(&mut self, pos: usize) {
-        self.pos = pos
+        self.pos = pos;
     }
 }
 
