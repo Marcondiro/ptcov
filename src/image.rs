@@ -1,13 +1,25 @@
-// todo better debug print
+use std::fmt;
+
 /// A memory chunk containing (a part of) the target's executable memory.
 ///
 /// This is disassembled during trace decoding to reconstruct the execution flow.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct PtImage<'a> {
     data: &'a [u8],
     virtual_address: u64,
     cr3: Option<u64>,
     vmcs_ptr: Option<u64>,
+}
+
+impl fmt::Debug for PtImage<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PtImage")
+            .field("virtual_address", &self.virtual_address)
+            .field("virtual_address_end", &self.virtual_address_end())
+            .field("cr3", &self.cr3)
+            .field("vmcs_ptr", &self.vmcs_ptr)
+            .finish()
+    }
 }
 
 impl<'a> PtImage<'a> {
