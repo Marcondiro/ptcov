@@ -825,6 +825,13 @@ impl PtCoverageDecoder<'_> {
                 InstructionClass::JumpDirect | InstructionClass::CallDirect => {}
             }
             self.state.ip = ins.near_branch_target();
+            #[cfg(feature = "more_checks")]
+            if let Some(ip) = until
+                && self.state.ip == ip
+            {
+                return Ok(UntilIpReached);
+            }
+
             inst_decoder = self
                 .state
                 .reposition_inst_decoder(inst_decoder, self.builder.images)?;
