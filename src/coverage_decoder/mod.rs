@@ -296,7 +296,10 @@ impl PtCoverageDecoder<'_> {
             match self.proceed_with_trace(&mut iteration_state) {
                 Ok(()) => {}
                 Err(PtDecoderError::Eof) => break Ok(()),
-                Err(e) => break Err(e),
+                Err(e) => {
+                    self.is_syncd = false;
+                    break Err(e);
+                }
             }
         }
     }
