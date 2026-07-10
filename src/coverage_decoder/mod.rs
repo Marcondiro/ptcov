@@ -515,10 +515,12 @@ impl PtCoverageDecoder<'_> {
 
         let ret = if tip_pgd.ip(&mut self.state.tip_last_ip) {
             #[cfg(feature = "more_checks")]
-            return match self.proceed_inst_until(Some(self.state.tip_last_ip))? {
-                CondBranch { .. } | Indirect | FarIndirect | UntilIpReached | Return => Ok(()),
-                MovCr3 => Err(PtDecoderError::IncoherentImage),
-            };
+            if self.state.packet_en {
+                return match self.proceed_inst_until(Some(self.state.tip_last_ip))? {
+                    CondBranch { .. } | Indirect | FarIndirect | UntilIpReached | Return => Ok(()),
+                    MovCr3 => Err(PtDecoderError::IncoherentImage),
+                };
+            }
 
             #[cfg_attr(feature = "more_checks", expect(unreachable_code))]
             Ok(())
