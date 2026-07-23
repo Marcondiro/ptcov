@@ -793,6 +793,8 @@ impl PtCoverageDecoder<'_> {
                 // Just proceed to the subsequent instruction, can continue with instruction decoder
                 InstructionClass::Other => continue,
                 // zero-length CALLs are ignored by return compression
+                // zero-legth direct jumps and calls can exit fast ignoring the decoder
+                // repositioning since not necessary
                 InstructionClass::JumpDirect | InstructionClass::CallDirect
                     if ins.near_branch_target() == ins.next_ip() =>
                 {
