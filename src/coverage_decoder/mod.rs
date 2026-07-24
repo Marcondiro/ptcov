@@ -522,7 +522,6 @@ impl PtCoverageDecoder<'_> {
                 };
             }
 
-            #[cfg_attr(feature = "more_checks", expect(unreachable_code))]
             Ok(())
         } else {
             // might be caused by:
@@ -1229,7 +1228,6 @@ mod test {
             Jmp_rel8_16 | Jmp_rel8_32 | Jmp_rel8_64 => InstructionClass::JumpDirect,
             // PTI_INST_MOV_CR3
             Mov_cr_r64 | Mov_cr_r32 if matches!(instruction.op0_register(), Register::CR3) => InstructionClass::MovCr3,
-            // PTI_INST_PTWRITE
             // 0xC3 PTI_INST_RET_C3
             Retnd | Retnq | Retnw |
             // 0xC2 PTI_INST_RET_C2

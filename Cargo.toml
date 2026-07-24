@@ -13,7 +13,7 @@ keywords = ["decoder", "intel", "pt"]
 categories = ["development-tools::testing"]
 
 [features]
-default = ["retc", "more_checks", "stronger_hash", "indirect_edges"]
+default = ["indirect_edges", "more_checks", "ptw", "retc", "stronger_hash"]
 # Support for IA32_RTIT_CTL.CYCEn dependent packets
 cyc = []
 # Support for IA32_RTIT_CTL.IA32_RTIT_CTL.EventEn dependent packets
@@ -46,7 +46,7 @@ log_instructions = []
 
 [package.metadata.cargo-all-features]
 # Exclude not yet implemented features from the build matrix
-denylist = ["pwr", "event", "ptw", "pebs"]
+denylist = ["pwr", "event", "pebs"]
 
 [lints.rust]
 missing-docs = "warn"

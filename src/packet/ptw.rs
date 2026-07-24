@@ -4,7 +4,7 @@ pub struct Ptw {}
 
 impl Ptw {
     const HEADER_SIZE: usize = 2;
-    pub(crate) const fn size(b1: u8) -> Result<usize, PtPacketParseError> {
+    pub const fn size(b1: u8) -> Result<usize, PtPacketParseError> {
         let payload_size = match (b1 >> 5) & 0b11 {
             0b00 => 4,
             0b01 => 8,
