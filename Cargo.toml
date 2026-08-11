@@ -13,7 +13,14 @@ keywords = ["decoder", "intel", "pt"]
 categories = ["development-tools::testing"]
 
 [features]
-default = ["indirect_edges", "more_checks", "ptw", "retc", "stronger_hash"]
+default = [
+  "cyc",
+  "indirect_edges",
+  "more_checks",
+  "ptw",
+  "retc",
+  "stronger_hash",
+]
 # Support for IA32_RTIT_CTL.CYCEn dependent packets
 cyc = []
 # NOT YET IMPLEMENTED - Support PEBS output to PT trace.
