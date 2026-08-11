@@ -16,21 +16,13 @@ categories = ["development-tools::testing"]
 default = ["indirect_edges", "more_checks", "ptw", "retc", "stronger_hash"]
 # Support for IA32_RTIT_CTL.CYCEn dependent packets
 cyc = []
-# Support for IA32_RTIT_CTL.IA32_RTIT_CTL.EventEn dependent packets
-event = []
-# Support for IA32_RTIT_CTL.MTCEn dependent packets
-mtc = []
-# Support PEBS output to PT trace.
+# NOT YET IMPLEMENTED - Support PEBS output to PT trace.
 # When IA32_PERF_CAPABILITIES.PEBS_OUTPUT_PT_AVAIL[16] and IA32_PEBS_ENABLE.OUTPUT [62:61] == 0b01
 pebs = []
 # Support for IA32_RTIT_CTL.PTWEn dependent packets
 ptw = []
-# Support for IA32_RTIT_CTL.PwrEvtEn dependent packets
-pwr = []
 # Support Indirect Transfer Compression for Returns (RET). Required if IA32_RTIT_CTL.DisRETC == 0
 retc = []
-# Support for IA32_RTIT_CTL.TSCEn dependent packets
-tsc = []
 
 # Perform more consistency checks even if not strictly necessary for trace decoding.
 # Without this feature, decoding might not detect inconsistencies in traces and give less precise errors.
@@ -45,11 +37,10 @@ log_packets = []
 log_instructions = []
 
 [package.metadata.cargo-all-features]
-# Exclude not yet implemented features from the build matrix
-denylist = ["pwr", "event", "pebs"]
+denylist = ["pebs"]
 
 [lints.rust]
-missing-docs = "warn"
+missing_docs = "warn"
 
 [dependencies]
 hashbrown = "0.17.1"

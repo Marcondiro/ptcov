@@ -1,48 +1,37 @@
-#[cfg(feature = "pebs")]
 use crate::packet::bbp::Bbp;
 use crate::packet::cbr::Cbr;
-#[cfg(feature = "event")]
 use crate::packet::cfe::Cfe;
 #[cfg(feature = "cyc")]
 use crate::packet::cyc::Cyc;
-#[cfg(feature = "event")]
 use crate::packet::evd::Evd;
 use crate::packet::mnt::Mnt;
 use crate::packet::mode::{ModeExec, ModeTsx};
-#[cfg(feature = "mtc")]
 use crate::packet::mtc::Mtc;
 use crate::packet::ovf::Ovf;
 use crate::packet::pip::Pip;
 use crate::packet::psb::{Psb, PsbEnd};
 use crate::packet::tip::{Fup, Tip, TipPgd, TipPge};
-#[cfg(all(feature = "tsc", feature = "mtc"))]
 use crate::packet::tma::Tma;
 use crate::packet::tnt::{TntIter, TntLong, TntShort};
 use crate::packet::trace_stop::TraceStop;
 use crate::packet::trig::Trig;
-#[cfg(feature = "tsc")]
 use crate::packet::tsc::Tsc;
 use crate::packet::vmcs::Vmcs;
 
 use crate::packet::pad::Pad;
 #[cfg(feature = "ptw")]
 use crate::packet::ptw::Ptw;
-#[cfg(feature = "pwr")]
 use crate::packet::pwr::{Exstop, Mwait, Pwre, Pwrx};
 
-#[cfg(feature = "pebs")]
 pub mod bbp;
 pub mod cbr;
-#[cfg(feature = "event")]
 mod cfe;
 #[cfg(feature = "cyc")]
 pub mod cyc;
 pub mod decoder;
-#[cfg(feature = "event")]
 mod evd;
 pub mod mnt;
 pub mod mode;
-#[cfg(feature = "mtc")]
 mod mtc;
 pub mod ovf;
 mod pad;
@@ -50,15 +39,12 @@ pub mod pip;
 pub mod psb;
 #[cfg(feature = "ptw")]
 mod ptw;
-#[cfg(feature = "pwr")]
 pub mod pwr;
 pub mod tip;
-#[cfg(all(feature = "tsc", feature = "mtc"))]
 mod tma;
 pub mod tnt;
 pub mod trace_stop;
 pub mod trig;
-#[cfg(feature = "tsc")]
 pub mod tsc;
 pub mod vmcs;
 
@@ -240,32 +226,26 @@ impl PtPacket {
                     )
                 }
 
-                #[cfg(all(feature = "tsc", feature = "mtc"))]
                 [0x02, 0x73, ..] => {
                     *pos += Tma::SIZE;
                     continue;
                 }
-                #[cfg(feature = "pwr")]
                 [0x02, Mwait::B1, ..] => {
                     *pos += Mwait::SIZE;
                     continue;
                 }
-                #[cfg(feature = "pwr")]
                 [0x02, Pwre::B1, ..] => {
                     *pos += Pwre::SIZE;
                     continue;
                 }
-                #[cfg(feature = "pwr")]
                 [0x02, Pwrx::B1, ..] => {
                     *pos += Pwrx::SIZE;
                     continue;
                 }
-                #[cfg(feature = "event")]
                 [0x02, Cfe::B1, ..] => {
                     *pos += Cfe::SIZE;
                     continue;
                 }
-                #[cfg(feature = "event")]
                 [0x02, Evd::B1, ..] => {
                     *pos += Evd::SIZE;
                     continue;
@@ -277,22 +257,18 @@ impl PtPacket {
                 }
                 #[cfg(feature = "pebs")]
                 [0x02, 0x33 | 0xb3, ..] => todo!(),
-                #[cfg(feature = "pebs")]
                 [0x02, Bbp::B1, ..] => {
                     *pos += Bbp::SIZE;
                     continue;
                 }
-                #[cfg(feature = "pwr")]
                 [0x02, 0x62 | 0xe2, ..] => {
                     *pos += Exstop::SIZE;
                     continue;
                 }
-                #[cfg(feature = "tsc")]
                 [0x19, ..] => {
                     *pos += Tsc::SIZE;
                     continue;
                 }
-                #[cfg(feature = "mtc")]
                 [0x59, ..] => {
                     *pos += Mtc::SIZE;
                     continue;
