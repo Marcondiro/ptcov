@@ -1,3 +1,4 @@
+#[cfg(feature = "pebs")]
 use crate::packet::bbp::Bbp;
 use crate::packet::cbr::Cbr;
 use crate::packet::cfe::Cfe;
@@ -23,6 +24,7 @@ use crate::packet::pad::Pad;
 use crate::packet::ptw::Ptw;
 use crate::packet::pwr::{Exstop, Mwait, Pwre, Pwrx};
 
+#[cfg(feature = "pebs")]
 pub mod bbp;
 pub mod cbr;
 mod cfe;
@@ -257,6 +259,7 @@ impl PtPacket {
                 }
                 #[cfg(feature = "pebs")]
                 [0x02, 0x33 | 0xb3, ..] => todo!(),
+                #[cfg(feature = "pebs")]
                 [0x02, Bbp::B1, ..] => {
                     *pos += Bbp::SIZE;
                     continue;
