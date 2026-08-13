@@ -7,8 +7,7 @@ ptcov is a decoder library to compute AFL-style code coverage from Intel® Proce
 This crate is based on Intel's SDM and takes inspiration from Intel's
 [libipt](https://github.com/intel/libipt) and from [libxdc](https://github.com/nyx-fuzz/libxdc).
 
-Since most of the optional PT packets are of limited use in fuzzing context, like power related info, they are not
-supported.
+Optional Intel PT `pebs` packets are not supported.
 CPUs erratas are not (yet) fully supported.
 
 [GitHub Actions]: https://github.com/Marcondiro/ptcov/actions

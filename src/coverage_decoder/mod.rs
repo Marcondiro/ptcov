@@ -347,7 +347,7 @@ impl PtCoverageDecoder<'_> {
         match iteration_state.packet_decoder.next_packet()? {
             PtPacket::Fup(fup) => {
                 self.state.packet_en = true;
-                self.handle_fup_after_ovf(fup)
+                apply_fup_after_ovf(&mut self.state, fup)
             }
             _ => {
                 self.state.packet_en = false;
@@ -390,15 +390,6 @@ impl PtCoverageDecoder<'_> {
 
         self.state.mode_tsx = mode_tsx;
         Ok(())
-    }
-
-    fn handle_fup_after_ovf(&mut self, fup: Fup) -> Result<(), PtDecoderError> {
-        if fup.ip(&mut self.state.tip_last_ip) {
-            self.state.ip = self.state.tip_last_ip;
-            Ok(())
-        } else {
-            Err(PtDecoderError::MalformedPacket)
-        }
     }
 
     fn handle_standalone_fup(&mut self, fup: &Fup) -> Result<(), PtDecoderError> {
@@ -476,8 +467,8 @@ impl PtCoverageDecoder<'_> {
             let packet = iteration_state.packet_decoder.next_packet()?;
             match packet {
                 PtPacket::Pip(pip) => self.handle_async_pip(pip),
-                PtPacket::Vmcs(..) => todo!("handle fup vmcs"),
-                PtPacket::ModeExec(..) => todo!("handle fup mode exec"),
+                PtPacket::Vmcs(v) => self.state.vmcs = Some(v),
+                PtPacket::ModeExec(m) => self.state.mode_exec = m,
                 PtPacket::Tip(tip) => break self.handle_async_tip(tip)?,
                 PtPacket::TipPgd(tip_pgd) => break self.handle_async_tip_pgd(tip_pgd),
                 p => {
@@ -953,7 +944,28 @@ fn decode_psbplus<CE: Debug>(
                     state.packet_en = false;
                 }
             }
-            PtPacket::Ovf(..) => todo!(),
+            PtPacket::Ovf(..) => {
+                // An overflow can occur during PSB+ and cause the PSBEND packet to be lost, so
+                // the OVF packet should also be viewed as terminating PSB+ (SDM 34.3.7).
+                #[cfg(feature = "log_packets")]
+                log::warn!(
+                    "PSB+ terminated by an OVF packet, PSBEND was likely lost, decoding might\
+                    fail due to incomplete state"
+                );
+
+                let packet_decoder_pos = iteration_state.packet_decoder.pos();
+                match iteration_state.packet_decoder.next_packet()? {
+                    PtPacket::Fup(fup) => {
+                        state.packet_en = true;
+                        apply_fup_after_ovf(&mut state, fup)?;
+                    }
+                    _ => {
+                        state.packet_en = false;
+                        iteration_state.packet_decoder.set_pos(packet_decoder_pos);
+                    }
+                }
+                return Ok(state);
+            }
             _ => return Err(PtDecoderError::MalformedPsbPlus),
         }
     }
@@ -966,6 +978,18 @@ fn decode_psbplus_fup(fup: Fup, mut last_ip: u64, cpu: Option<PtCpu>) -> Option<
         // todo: pt_evt_check_bdm70
     }
     fup.ip(&mut last_ip).then_some(last_ip)
+}
+
+/// Applies the FUP that indicates the resume IP after a buffer overflow resolves while
+/// `PacketEn=1` (SDM 34.3.8). Unlike a regular FUP, this doesn't decode instructions to reach the
+/// new IP, since packets (and hence the intervening instruction stream) may have been lost.
+fn apply_fup_after_ovf(state: &mut ExecutionState, fup: Fup) -> Result<(), PtDecoderError> {
+    if fup.ip(&mut state.tip_last_ip) {
+        state.ip = state.tip_last_ip;
+        Ok(())
+    } else {
+        Err(PtDecoderError::MalformedPacket)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
