@@ -72,7 +72,7 @@ mod tests {
     use crate::packet::mode::{AddressingMode, ModeExec};
     use crate::packet::tip::{Tip, TipPgd, TipPge};
     use crate::packet::tnt::TntShort;
-    use std::iter::zip;
+    use core::iter::zip;
 
     #[test]
     fn next() {

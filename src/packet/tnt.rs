@@ -3,7 +3,7 @@ use core::fmt::{Debug, Formatter};
 /// Short TNT packet (1 byte), carrying up to 6 taken/not-taken decisions.
 #[derive(Clone, Copy, PartialEq)]
 pub struct TntShort {
-    pub(super) raw: u8,
+    pub(crate) raw: u8,
 }
 
 /// Long TNT packet (8 bytes), carrying up to 47 taken/not-taken decisions.
@@ -59,7 +59,7 @@ impl TntShort {
     pub(super) const SIZE: usize = 1;
 
     #[cfg(test)]
-    pub(super) fn new(taken_not_taken: &[bool]) -> Self {
+    pub(crate) fn new(taken_not_taken: &[bool]) -> Self {
         assert!(!taken_not_taken.is_empty());
         assert!(taken_not_taken.len() < 7);
 

@@ -57,7 +57,7 @@ impl TntCacheValue {
 }
 
 impl TntCacheValueBuilder {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             coverage_entries: 0,
             coverage: [CoverageIndex::default(); 8 * size_of::<TntIter>()],

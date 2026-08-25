@@ -10,7 +10,6 @@ use crate::packet::{PtPacket, PtPacketParseError};
 use crate::utils::fmix64;
 use cache::*;
 use core::fmt::Debug;
-use core::mem;
 use iced_x86::{Code, FlowControl, Instruction, Register};
 use num_traits::{SaturatingAdd, WrappingAdd};
 
@@ -88,6 +87,7 @@ pub struct PtCoverageDecoder<'a> {
     state: ExecutionState,
     proceed_inst_cache: InstCache,
     tnt_cache: TntCache,
+    tnt_cache_coverage_map_size: usize,
 }
 
 #[derive(Debug)]
@@ -174,7 +174,7 @@ impl ExecutionState {
         let image = images
             .iter()
             .find(|&image| {
-                self.ip >= image.virtual_address_start() && self.ip <= image.virtual_address_end()
+                self.ip >= image.virtual_address_start() && self.ip < image.virtual_address_end()
             })
             .ok_or(PtDecoderError::MissingImage { address: self.ip })?;
 
@@ -264,6 +264,7 @@ impl<'a> PtCoverageDecoderBuilder<'a> {
             is_syncd: false,
             proceed_inst_cache: InstCache::default(),
             tnt_cache: TntCache::default(),
+            tnt_cache_coverage_map_size: 0,
         }
     }
 }
@@ -288,6 +289,11 @@ impl PtCoverageDecoder<'_> {
     {
         if coverage.is_empty() || !coverage.len().is_power_of_two() {
             return Err(PtDecoderError::InvalidArgument);
+        }
+
+        if coverage.len() != self.tnt_cache_coverage_map_size {
+            self.tnt_cache.clear();
+            self.tnt_cache_coverage_map_size = coverage.len()
         }
 
         let mut iteration_state = CovDecIterationState::new(self, pt_trace, coverage)?;
@@ -324,7 +330,7 @@ impl PtCoverageDecoder<'_> {
             PtPacket::TraceStop(..) => {} // todo
             PtPacket::Vmcs(..) => {}      //todo
             PtPacket::Ovf(..) => self.handle_ovf(iteration_state)?,
-            PtPacket::Psb(..) => self.state = decode_psbplus(iteration_state, self.builder.cpu)?,
+            PtPacket::Psb(..) => self.decode_psbplus(iteration_state)?,
             PtPacket::PsbEnd(..) => {
                 return Err(PtDecoderError::InvalidPacketSequence {
                     packets: vec![packet],
@@ -334,11 +340,17 @@ impl PtCoverageDecoder<'_> {
         Ok(())
     }
 
+    /// Resumes decoding after a buffer overflow (SDM 34.3.8).
+    ///
+    /// The OVF is followed by a FUP if the overflow resolved while `PacketEn=1`, and only timing
+    /// packets may come in between. Otherwise no packet is generated and tracing resumes later
+    /// with a TIP.PGE, so the packet that was looked at is left for the caller to decode.
     #[cold]
-    fn handle_ovf<CE: CoverageEntry>(
+    fn handle_ovf<CE: Debug>(
         &mut self,
         iteration_state: &mut CovDecIterationState<CE>,
     ) -> Result<(), PtDecoderError> {
+        // No RET compression is allowed across an overflow
         #[cfg(feature = "retc")]
         self.state.ret_comp_stack.clear();
 
@@ -347,7 +359,15 @@ impl PtCoverageDecoder<'_> {
         match iteration_state.packet_decoder.next_packet()? {
             PtPacket::Fup(fup) => {
                 self.state.packet_en = true;
-                apply_fup_after_ovf(&mut self.state, fup)
+
+                // The FUP carries the IP of the first instruction traced after the overflow.
+                // Unlike a regular FUP it is applied without decoding the instructions leading to
+                // it, since the packets covering the execution in between were lost.
+                if !fup.ip(&mut self.state.tip_last_ip) {
+                    return Err(PtDecoderError::MalformedPacket);
+                }
+                self.state.ip = self.state.tip_last_ip;
+                Ok(())
             }
             _ => {
                 self.state.packet_en = false;
@@ -594,7 +614,7 @@ impl PtCoverageDecoder<'_> {
             if cfg!(not(feature = "retc"))
                 && let Some(v) = self.tnt_cache.get(&tnt_cache_key)
             {
-                let _ = tnt_iter.nth(v.coverage_len());
+                let _ = tnt_iter.nth(v.coverage_len() - 1);
                 self.state.ip = v.to();
                 for i in v.coverage() {
                     self.add_coverage_from_index(*i, iteration_state);
@@ -666,14 +686,6 @@ impl PtCoverageDecoder<'_> {
                         });
                     };
 
-                    // commit the TNT cache entry
-                    if tnt_cache_val.coverage_len() > 0 {
-                        self.tnt_cache.insert(
-                            tnt_cache_key,
-                            mem::take(&mut tnt_cache_val).build(self.state.ip),
-                        );
-                    }
-
                     if tip.ip(&mut self.state.tip_last_ip) {
                         #[cfg(feature = "indirect_edges")]
                         self.add_coverage_entry(
@@ -682,6 +694,8 @@ impl PtCoverageDecoder<'_> {
                             iteration_state,
                         );
                         self.state.ip = self.state.tip_last_ip;
+                        // clear the TNT cache entry
+                        tnt_cache_val = TntCacheValue::builder();
                         tnt_cache_key = TntCacheKey {
                             from: self.state.ip,
                             tnt: tnt_iter,
@@ -892,10 +906,54 @@ impl PtCoverageDecoder<'_> {
             return;
         }
 
-        // SAFETY: `CoverageIndex.new()` ensures that the inner value is < `coverage.len()`
+        // SAFETY: `CoverageIndex.new()` ensures that the inner value is < `coverage.len()` and the
+        // tnt cache gets cleared in case the map size changes
         let coverage_entry = unsafe { iteration_state.coverage.get_unchecked_mut(usize::from(i)) };
 
         *coverage_entry = coverage_entry.wrapping_add(&1.into());
+    }
+
+    #[cold]
+    fn decode_psbplus<CE: Debug>(
+        &mut self,
+        iteration_state: &mut CovDecIterationState<CE>,
+    ) -> Result<(), PtDecoderError> {
+        // SDM: no state needs to be carried across a PSB.
+        self.state = ExecutionState::new();
+
+        loop {
+            match iteration_state.packet_decoder.next_packet()? {
+                PtPacket::PsbEnd(..) => return Ok(()),
+                PtPacket::Pip(pip) => self.handle_async_pip(pip),
+                PtPacket::Vmcs(vmcs) => self.state.vmcs = Some(vmcs),
+                PtPacket::ModeTsx(mode_tsx) => self.state.mode_tsx = mode_tsx,
+                PtPacket::ModeExec(mode_exec) => self.state.mode_exec = mode_exec,
+                PtPacket::Fup(fup) => {
+                    // fixme: if the decoder was already running, consider also that some code executed
+                    // between PSB's preceeding packet and PSB might get ignored here
+                    if let Some(last_ip) =
+                        decode_psbplus_fup(fup, self.state.tip_last_ip, self.builder.cpu)
+                    {
+                        self.state.packet_en = true;
+                        self.state.tip_last_ip = last_ip;
+                        self.state.ip = last_ip;
+                    } else {
+                        self.state.packet_en = false;
+                    }
+                }
+                PtPacket::Ovf(..) => {
+                    // An overflow can occur during PSB+ and cause the PSBEND packet to be lost, so
+                    // the OVF packet should also be viewed as terminating PSB+ (SDM 34.3.7).
+                    log::warn!(
+                        "PSB+ terminated by an OVF packet, PSBEND was likely lost, decoding might \
+                        fail due to incomplete state"
+                    );
+
+                    return self.handle_ovf(iteration_state);
+                }
+                _ => return Err(PtDecoderError::MalformedPsbPlus),
+            }
+        }
     }
 }
 
@@ -919,58 +977,6 @@ impl From<CoverageIndex> for usize {
     }
 }
 
-#[cold]
-fn decode_psbplus<CE: Debug>(
-    iteration_state: &mut CovDecIterationState<CE>,
-    cpu: Option<PtCpu>,
-) -> Result<ExecutionState, PtDecoderError> {
-    let mut state = ExecutionState::new();
-
-    loop {
-        match iteration_state.packet_decoder.next_packet()? {
-            PtPacket::PsbEnd(..) => return Ok(state),
-            PtPacket::Pip(pip) => state.pip = pip,
-            PtPacket::Vmcs(vmcs) => state.vmcs = Some(vmcs),
-            PtPacket::ModeTsx(mode_tsx) => state.mode_tsx = mode_tsx,
-            PtPacket::ModeExec(mode_exec) => state.mode_exec = mode_exec,
-            PtPacket::Fup(fup) => {
-                // fixme: if the decoder was already running, consider also that some code executed
-                // between PSB's preceeding packet and PSB might get ignored here
-                if let Some(last_ip) = decode_psbplus_fup(fup, state.tip_last_ip, cpu) {
-                    state.packet_en = true;
-                    state.tip_last_ip = last_ip;
-                    state.ip = last_ip;
-                } else {
-                    state.packet_en = false;
-                }
-            }
-            PtPacket::Ovf(..) => {
-                // An overflow can occur during PSB+ and cause the PSBEND packet to be lost, so
-                // the OVF packet should also be viewed as terminating PSB+ (SDM 34.3.7).
-                #[cfg(feature = "log_packets")]
-                log::warn!(
-                    "PSB+ terminated by an OVF packet, PSBEND was likely lost, decoding might\
-                    fail due to incomplete state"
-                );
-
-                let packet_decoder_pos = iteration_state.packet_decoder.pos();
-                match iteration_state.packet_decoder.next_packet()? {
-                    PtPacket::Fup(fup) => {
-                        state.packet_en = true;
-                        apply_fup_after_ovf(&mut state, fup)?;
-                    }
-                    _ => {
-                        state.packet_en = false;
-                        iteration_state.packet_decoder.set_pos(packet_decoder_pos);
-                    }
-                }
-                return Ok(state);
-            }
-            _ => return Err(PtDecoderError::MalformedPsbPlus),
-        }
-    }
-}
-
 fn decode_psbplus_fup(fup: Fup, mut last_ip: u64, cpu: Option<PtCpu>) -> Option<u64> {
     if let Some(cpu) = cpu
         && cpu.errata().bdm70
@@ -978,18 +984,6 @@ fn decode_psbplus_fup(fup: Fup, mut last_ip: u64, cpu: Option<PtCpu>) -> Option<
         // todo: pt_evt_check_bdm70
     }
     fup.ip(&mut last_ip).then_some(last_ip)
-}
-
-/// Applies the FUP that indicates the resume IP after a buffer overflow resolves while
-/// `PacketEn=1` (SDM 34.3.8). Unlike a regular FUP, this doesn't decode instructions to reach the
-/// new IP, since packets (and hence the intervening instruction stream) may have been lost.
-fn apply_fup_after_ovf(state: &mut ExecutionState, fup: Fup) -> Result<(), PtDecoderError> {
-    if fup.ip(&mut state.tip_last_ip) {
-        state.ip = state.tip_last_ip;
-        Ok(())
-    } else {
-        Err(PtDecoderError::MalformedPacket)
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1073,11 +1067,67 @@ impl From<&Instruction> for InstructionClass {
 #[cfg(test)]
 mod test {
     use crate::coverage_decoder::InstructionClass;
-    use iced_x86::{Code, Instruction, Register};
-    use std::mem;
+    use crate::packet::mode::{self, AddressingMode, ModeExec};
+    use crate::packet::psb::{Psb, PsbEnd};
+    use crate::packet::tip::IpBytes;
+    use crate::packet::tnt::TntShort;
+    use crate::{PtCoverageDecoderBuilder, PtImage};
+    use core::mem;
+    use iced_x86::{Code, Encoder, Instruction, Register};
+
+    /// A tnt cache hit must decode to the same coverage as a cold run.
+    ///
+    /// Only bites without `retc`, the tnt cache is not read otherwise.
+    #[test]
+    fn tnt_cache_replay_matches_cold_decode() {
+        const BASE: u64 = 0x1000;
+        const TIP_TARGET: u64 = 0x1010;
+
+        // Branches must be taken and land elsewhere: a not taken branch has from == to, and
+        // `CoverageIndex::new` maps every self edge to the same entry. The two paths must also
+        // branch by a different displacement, or their edges collide in the coverage map.
+        let mut bin = vec![0x90; 0x20];
+        let mut asm = |address: u64, instruction: Instruction| {
+            let mut encoder = Encoder::new(64);
+            encoder.encode(&instruction, address).unwrap();
+            let encoded = encoder.take_buffer();
+            let offset = (address - BASE) as usize;
+            bin[offset..offset + encoded.len()].copy_from_slice(&encoded);
+        };
+        let je = |target| Instruction::with_branch(Code::Je_rel8_64, target).unwrap();
+        let jmp_rax = || Instruction::with1(Code::Jmp_rm64, Register::RAX).unwrap();
+
+        asm(0x1000, je(0x1004)); // consumes a tnt bit
+        asm(0x1004, jmp_rax()); // indirect, binds to the tip that follows the tnt
+        asm(0x1006, je(0x100c)); // fall-through past the indirect, must never be executed
+        asm(0x100c, jmp_rax());
+        asm(TIP_TARGET, je(0x101a)); // where execution really continues
+
+        let mut trace = Psb::CONTENT.to_vec();
+        trace.extend_from_slice(&[mode::B0, ModeExec::B1 | AddressingMode::_64 as u8]);
+        trace.push(IpBytes::_64 as u8 | 0x1d); // fup
+        trace.extend_from_slice(&BASE.to_le_bytes());
+        trace.extend_from_slice(&[Psb::B0, PsbEnd::B1]);
+        trace.push(TntShort::new(&[true, true]).raw);
+        trace.push(IpBytes::_64 as u8 | 0x0d); // tip
+        trace.extend_from_slice(&TIP_TARGET.to_le_bytes());
+
+        let images = [PtImage::new(&bin, BASE)];
+        let decode = |warm_up: bool| {
+            let mut cov_dec = PtCoverageDecoderBuilder::default().images(&images).build();
+            if warm_up {
+                cov_dec.coverage(&trace, &mut vec![0u8; 1024]).unwrap();
+            }
+            let mut coverage = vec![0u8; 1024];
+            cov_dec.coverage(&trace, &mut coverage).unwrap();
+            coverage
+        };
+
+        assert_eq!(decode(false), decode(true));
+    }
 
     #[test]
-    fn from_works() {
+    fn instruction_from_u16_works() {
         for i in Code::Add_rm8_r8 as u16..=Code::VEX_Vsm3rnds2_xmm_xmm_xmmm128_imm8 as u16 {
             let code: Code = unsafe { mem::transmute(i) };
 

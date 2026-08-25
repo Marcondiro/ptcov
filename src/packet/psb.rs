@@ -35,7 +35,7 @@ impl Psb {
     ];
 }
 
-/// Returns the index of the first byte __after__ the first `Psb` packet
+/// Returns the index of the first `Psb` packet
 pub(crate) fn first_psb_position(buffer: &[u8]) -> Option<usize> {
     for (i, window) in buffer.windows(Psb::SIZE).enumerate() {
         if window == Psb::CONTENT {
